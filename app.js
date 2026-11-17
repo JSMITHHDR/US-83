@@ -732,7 +732,7 @@ function updateStatusMessage()
 }
 
 // =====================================================
-// CREATE WEIGHT SLIDER
+// CREATE WEIGHT SLIDER WITH EDITABLE NUMBER BOX
 // =====================================================
 
 function createWeightSlider(
@@ -740,6 +740,11 @@ function createWeightSlider(
     changeFunction
 )
 {
+    const minimumValue = 0;
+    const maximumValue = 5;
+    const stepValue = 0.1;
+    const defaultValue = 1;
+
     const container =
         document.createElement(
             "div"
@@ -761,58 +766,277 @@ function createWeightSlider(
     labelName.textContent =
         labelText;
 
-    const output =
+    /*
+    Create an editable number input instead of the
+    previous read-only output element.
+
+    Users can type a weight directly into this box.
+    */
+
+    const numberInput =
         document.createElement(
-            "output"
+            "input"
         );
 
-    output.textContent =
-        "1.0x";
+    numberInput.type =
+        "number";
+
+    numberInput.className =
+        "weight-number";
+
+    numberInput.min =
+        String(
+            minimumValue
+        );
+
+    numberInput.max =
+        String(
+            maximumValue
+        );
+
+    numberInput.step =
+        String(
+            stepValue
+        );
+
+    numberInput.value =
+        defaultValue.toFixed(
+            1
+        );
+
+    numberInput.setAttribute(
+        "aria-label",
+        labelText + " weight"
+    );
 
     label.appendChild(
         labelName
     );
 
     label.appendChild(
-        output
+        numberInput
     );
 
-    const input =
+    const rangeInput =
         document.createElement(
             "input"
         );
 
-    input.type =
+    rangeInput.type =
         "range";
 
-    input.min =
-        "0";
+    rangeInput.min =
+        String(
+            minimumValue
+        );
 
-    input.max =
-        "5";
+    rangeInput.max =
+        String(
+            maximumValue
+        );
 
-    input.step =
-        "0.1";
+    rangeInput.step =
+        String(
+            stepValue
+        );
 
-    input.value =
-        "1";
+    rangeInput.value =
+        String(
+            defaultValue
+        );
 
-    input.addEventListener(
+    rangeInput.setAttribute(
+        "aria-label",
+        labelText + " slider"
+    );
+
+    /*
+    Keeps values within the accepted 0 through 5 range.
+    Values are rounded to the nearest tenth.
+    */
+
+    function normalizeWeight(
+        value
+    )
+    {
+        const numericValue =
+            Number(
+                value
+            );
+
+        if (
+            !Number.isFinite(
+                numericValue
+            )
+        )
+        {
+            return null;
+        }
+
+        const limitedValue =
+            Math.min(
+                maximumValue,
+                Math.max(
+                    minimumValue,
+                    numericValue
+                )
+            );
+
+        const roundedValue =
+            Math.round(
+                limitedValue
+                / stepValue
+            )
+            * stepValue;
+
+        return Number(
+            roundedValue.toFixed(
+                1
+            )
+        );
+    }
+
+    /*
+    Updates both controls and recalculates the map.
+    */
+
+    function applyWeight(
+        value
+    )
+    {
+        const normalizedValue =
+            normalizeWeight(
+                value
+            );
+
+        if (
+            normalizedValue === null
+        )
+        {
+            return;
+        }
+
+        rangeInput.value =
+            String(
+                normalizedValue
+            );
+
+        numberInput.value =
+            normalizedValue.toFixed(
+                1
+            );
+
+        changeFunction(
+            normalizedValue
+        );
+    }
+
+    /*
+    Moving the slider updates the number box.
+    */
+
+    rangeInput.addEventListener(
         "input",
         function ()
         {
-            const value =
-                Number(
-                    input.value
+            applyWeight(
+                rangeInput.value
+            );
+        }
+    );
+
+    /*
+    Typing in the number box updates the slider.
+
+    The input event makes the map respond immediately
+    once the entered value is valid.
+    */
+
+    numberInput.addEventListener(
+        "input",
+        function ()
+        {
+            if (
+                numberInput.value === ""
+                ||
+                numberInput.value === "-"
+                ||
+                numberInput.value === "."
+            )
+            {
+                return;
+            }
+
+            const normalizedValue =
+                normalizeWeight(
+                    numberInput.value
                 );
 
-            output.textContent =
-                value.toFixed(1)
-                + "x";
+            if (
+                normalizedValue === null
+            )
+            {
+                return;
+            }
+
+            rangeInput.value =
+                String(
+                    normalizedValue
+                );
 
             changeFunction(
-                value
+                normalizedValue
             );
+        }
+    );
+
+    /*
+    When the user leaves the number box, clamp the
+    value to 0 through 5 and format it to one decimal.
+    */
+
+    numberInput.addEventListener(
+        "change",
+        function ()
+        {
+            if (
+                numberInput.value.trim() === ""
+            )
+            {
+                applyWeight(
+                    defaultValue
+                );
+
+                return;
+            }
+
+            applyWeight(
+                numberInput.value
+            );
+        }
+    );
+
+    /*
+    Pressing Enter applies the entered number and
+    removes focus from the box.
+    */
+
+    numberInput.addEventListener(
+        "keydown",
+        function (event)
+        {
+            if (
+                event.key === "Enter"
+            )
+            {
+                event.preventDefault();
+
+                applyWeight(
+                    numberInput.value
+                );
+
+                numberInput.blur();
+            }
         }
     );
 
@@ -821,12 +1045,11 @@ function createWeightSlider(
     );
 
     container.appendChild(
-        input
+        rangeInput
     );
 
     return container;
 }
-
 // =====================================================
 // BUILD INDEX AND FIELD WEIGHT CONTROLS
 // =====================================================
