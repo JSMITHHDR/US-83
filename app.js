@@ -1,10 +1,10 @@
 // =====================================================
 // US 83 NEED INDEX EXPLORER
-// VERSION 4.1
+// VERSION 5.0
 // =====================================================
 
 console.log(
-    "US 83 Need Index Explorer version 4.1"
+    "US 83 Need Index Explorer version 5.0"
 );
 
 // =====================================================
@@ -18,7 +18,7 @@ const EXT = {
     north: 36.796656
 };
 
-// Use the raw GitHub image URL.
+// Raw GitHub URL for the basemap image.
 const BASEMAP =
     "https://raw.githubusercontent.com/JSMITHHDR/US-83/5165469a29e097b35ddc90d6901b971ff3d13df0/State%20Narrow.png";
 
@@ -27,13 +27,13 @@ const BASEMAP =
 // =====================================================
 
 const DISPLAY = {
-    // Positive values move the basemap right.
+    // Horizontal basemap adjustment.
     basemapShiftX: 0,
 
-    // Negative values move the basemap up.
+    // Negative values move the basemap upward.
     basemapShiftY: -7,
 
-    // Fixed roadway line thickness.
+    // Fixed line thickness.
     lineWidth: 8
 };
 
@@ -45,16 +45,16 @@ const state = {
     segments: [],
     indices: [],
 
-    // Calculated combined Need Index by Segment ID.
+    // Final combined score by Segment ID.
     scores: new Map(),
 
     // Four-bucket classification by Segment ID.
     colorBuckets: new Map(),
 
-    // Index-level slider weights.
+    // Main index-level slider weights.
     indexW: {},
 
-    // Field-level slider weights.
+    // Individual field slider weights.
     fieldW: {}
 };
 
@@ -137,10 +137,10 @@ function mapFrame()
         - EXT.south;
 
     /*
-    One scale is used for both dimensions.
+    Use one common scale for both dimensions.
 
-    This prevents the basemap and linework from being
-    independently stretched to the canvas width and height.
+    This prevents the background and the linework from
+    being stretched independently.
     */
 
     const scale =
@@ -184,7 +184,7 @@ function mapFrame()
 }
 
 // =====================================================
-// PROJECT LINE COORDINATES
+// PROJECT LONGITUDE AND LATITUDE
 // =====================================================
 
 function project(
@@ -224,33 +224,31 @@ function project(
 // =====================================================
 
 /*
-The segments are ranked by their current combined Need Index.
+The final combined scores are ranked and divided into
+four approximately equal groups.
 
-The ranked segments are divided into four approximately
-equal groups:
-
-1. Lower need
-2. Moderate need
-3. High need
-4. Highest need
+Bucket 1: Lowest 25 percent
+Bucket 2: 25th to 50th percentile
+Bucket 3: 50th to 75th percentile
+Bucket 4: Highest 25 percent
 */
 
 const COLOR_BUCKETS = [
     {
         label: "Lower need",
-        color: "#38A800"
+        color: "#2E7D32"
     },
     {
         label: "Moderate need",
-        color: "#FFFF00"
+        color: "#D4C900"
     },
     {
         label: "High need",
-        color: "#E69800"
+        color: "#F9A825"
     },
     {
         label: "Highest need",
-        color: "#FF0000"
+        color: "#C62828"
     }
 ];
 
@@ -258,7 +256,7 @@ function getBucketColor(
     bucketNumber
 )
 {
-    const safeBucketNumber =
+    const safeBucket =
         Math.max(
             0,
             Math.min(
@@ -268,7 +266,7 @@ function getBucketColor(
         );
 
     return COLOR_BUCKETS[
-        safeBucketNumber
+        safeBucket
     ].color;
 }
 
@@ -303,119 +301,195 @@ function activeIndexWeightTotal()
 }
 
 // =====================================================
-// CALCULATE ONE NEED INDEX
+// SAFE NUMERIC VALUE
 // =====================================================
 
-function calculateIndexScore(
+/*
+This reproduces the Excel expression:
+
+IF(cell="",0,cell)
+
+Blank, missing, and nonnumeric values become zero.
+*/
+
+function safeNumber(
+    value
+)
+{
+    if (
+        value === null
+        ||
+        value === undefined
+        ||
+        value === ""
+    )
+    {
+        return 0;
+    }
+
+    const numericValue =
+        Number(value);
+
+    return Number.isFinite(
+        numericValue
+    )
+        ? numericValue
+        : 0;
+}
+
+// =====================================================
+// RAW SCORE FOR ONE SEGMENT AND ONE INDEX
+// =====================================================
+
+/*
+This reproduces the first part of the Excel formula:
+
+(
+    Field1 * Weight1
+    + Field2 * Weight2
+    + ...
+)
+* FutureVolumeFactor
+
+The field-weight total is not used as a denominator.
+The input fields are not individually normalized.
+*/
+
+function calculateRawIndexScore(
     row,
     index
 )
 {
-    let weightedTotal = 0;
-    let weightTotal = 0;
+    let weightedFieldTotal = 0;
 
     index.fields.forEach(
         function (field)
         {
-            const rawValue =
-                row.values[
-                    field
-                ];
-
-            /*
-            Exclude missing and nonnumeric values.
-
-            This prevents missing values from behaving as
-            zero values in the weighted average.
-            */
-
-            if (
-                rawValue === null
-                ||
-                rawValue === ""
-                ||
-                !Number.isFinite(
-                    Number(rawValue)
-                )
-            )
-            {
-                return;
-            }
+            const fieldValue =
+                safeNumber(
+                    row.values[
+                        field
+                    ]
+                );
 
             const fieldWeight =
-                Number(
+                safeNumber(
                     state.fieldW[
                         index.id
                     ]?.[field]
                     ?? 0
                 );
 
-            /*
-            A field weight of zero removes the field from
-            both the numerator and denominator.
-            */
-
-            if (fieldWeight <= 0)
-            {
-                return;
-            }
-
-            const fieldScale =
-                Number(
-                    index.scales?.[
-                        field
-                    ]
-                    ?? 1
-                );
-
-            const safeScale =
-                fieldScale > 0
-                    ? fieldScale
-                    : 1;
-
-            const normalizedValue =
-                Number(rawValue)
-                / safeScale;
-
-            weightedTotal +=
-                normalizedValue
+            weightedFieldTotal +=
+                fieldValue
                 * fieldWeight;
-
-            weightTotal +=
-                fieldWeight;
         }
     );
 
-    /*
-    Null means the index has no active fields.
-
-    This is different from a legitimate calculated score
-    of zero.
-    */
-
-    if (weightTotal <= 0)
-    {
-        return null;
-    }
-
-    const weightedMean =
-        weightedTotal
-        / weightTotal;
-
-    const rawFutureVolumeFactor =
-        Number(
+    const futureVolumeFactor =
+        safeNumber(
             row.futureVolumeFactor
         );
 
-    const futureVolumeFactor =
-        Number.isFinite(
-            rawFutureVolumeFactor
-        )
-            ? rawFutureVolumeFactor
-            : 1;
-
-    return weightedMean
+    return weightedFieldTotal
         * futureVolumeFactor;
+}
+
+// =====================================================
+// NORMALIZE ONE INDEX AGAINST ITS PEAK
+// =====================================================
+
+/*
+This reproduces:
+
+peak, MAX(scores)
+
+and:
+
+IF(
+    peak=0,
+    0,
+    currentSegmentScore / peak
+)
+
+Every index is recalculated independently because each
+index has its own fields and field-slider weights.
+*/
+
+function calculateNormalizedIndexScores(
+    index
+)
+{
+    const rawScores =
+        new Map();
+
+    let peakScore = 0;
+
+    // First pass: calculate all raw scores and find peak.
+
+    state.segments.forEach(
+        function (segment)
+        {
+            const row =
+                index.rows[
+                    segment.segmentId
+                ];
+
+            const rawScore =
+                row
+                    ? calculateRawIndexScore(
+                        row,
+                        index
+                    )
+                    : 0;
+
+            rawScores.set(
+                segment.segmentId,
+                rawScore
+            );
+
+            peakScore =
+                Math.max(
+                    peakScore,
+                    rawScore
+                );
+        }
+    );
+
+    const normalizedScores =
+        new Map();
+
+    // Second pass: divide each raw score by the peak.
+
+    state.segments.forEach(
+        function (segment)
+        {
+            const rawScore =
+                rawScores.get(
+                    segment.segmentId
+                )
+                ?? 0;
+
+            const normalizedScore =
+                peakScore === 0
+                    ? 0
+                    : rawScore
+                        / peakScore;
+
+            normalizedScores.set(
+                segment.segmentId,
+                normalizedScore
+            );
+        }
+    );
+
+    return {
+        peak:
+            peakScore,
+
+        scores:
+            normalizedScores
+    };
 }
 
 // =====================================================
@@ -444,8 +518,30 @@ function assignColorBuckets()
                 second
             )
             {
-                return first[1]
+                /*
+                Sort by score first.
+                */
+
+                const scoreDifference =
+                    first[1]
                     - second[1];
+
+                if (scoreDifference !== 0)
+                {
+                    return scoreDifference;
+                }
+
+                /*
+                Use Segment ID as a stable tie breaker.
+                */
+
+                return String(
+                    first[0]
+                ).localeCompare(
+                    String(
+                        second[0]
+                    )
+                );
             }
         );
 
@@ -466,33 +562,25 @@ function assignColorBuckets()
             const segmentId =
                 entry[0];
 
-            const percentile =
-                segmentCount === 1
-                    ? 0.5
-                    : sortedIndex
-                    / (
-                        segmentCount
-                        - 1
-                    );
+            /*
+            Dividing the sorted position by the record count
+            creates four approximately equal groups.
 
-            let bucketNumber;
+            With 55 segments, the groups will contain roughly
+            13 to 14 segments each.
+            */
 
-            if (percentile < 0.25)
-            {
-                bucketNumber = 0;
-            }
-            else if (percentile < 0.50)
-            {
-                bucketNumber = 1;
-            }
-            else if (percentile < 0.75)
-            {
-                bucketNumber = 2;
-            }
-            else
-            {
-                bucketNumber = 3;
-            }
+            const bucketNumber =
+                Math.min(
+                    3,
+                    Math.floor(
+                        (
+                            sortedIndex
+                            * 4
+                        )
+                        / segmentCount
+                    )
+                );
 
             state.colorBuckets.set(
                 segmentId,
@@ -503,7 +591,7 @@ function assignColorBuckets()
 }
 
 // =====================================================
-// RECALCULATE ALL SEGMENT SCORES
+// RECALCULATE ALL NEED INDEX SCORES
 // =====================================================
 
 function recalculateScores()
@@ -513,11 +601,9 @@ function recalculateScores()
     state.colorBuckets.clear();
 
     /*
-    If all index sliders are zero, stop before assigning
-    any segment scores.
+    If every main index slider is zero, stop immediately.
 
-    This prevents the previous default green line from
-    appearing when every index is turned off.
+    No zero scores or green fallback lines are created.
     */
 
     if (
@@ -532,87 +618,84 @@ function recalculateScores()
         return;
     }
 
+    /*
+    Calculate the Excel-style normalized score for each
+    individual index first.
+    */
+
+    const normalizedIndexResults =
+        {};
+
+    state.indices.forEach(
+        function (index)
+        {
+            normalizedIndexResults[
+                index.id
+            ] =
+                calculateNormalizedIndexScores(
+                    index
+                );
+        }
+    );
+
+    /*
+    Combine the normalized individual indexes using the
+    main index-level sliders.
+
+    Dividing by the total active index weight means that
+    only the relative index weights matter.
+
+    For example, weights of 1,1,1,1,1 provide the same
+    combination as 2,2,2,2,2.
+    */
+
     state.segments.forEach(
         function (segment)
         {
-            let combinedTotal = 0;
-            let combinedWeight = 0;
+            let combinedWeightedTotal = 0;
+            let combinedWeightTotal = 0;
 
             state.indices.forEach(
                 function (index)
                 {
                     const indexWeight =
-                        Number(
+                        safeNumber(
                             state.indexW[
                                 index.id
                             ]
                             ?? 0
                         );
 
-                    /*
-                    An index weight of zero removes that index
-                    from the combined Need Index.
-                    */
-
                     if (indexWeight <= 0)
                     {
                         return;
                     }
 
-                    const row =
-                        index.rows[
+                    const normalizedScore =
+                        normalizedIndexResults[
+                            index.id
+                        ].scores.get(
                             segment.segmentId
-                        ];
-
-                    if (!row)
-                    {
-                        return;
-                    }
-
-                    const indexScore =
-                        calculateIndexScore(
-                            row,
-                            index
-                        );
-
-                    /*
-                    Null means every field in this index has
-                    been disabled or is missing.
-                    */
-
-                    if (
-                        indexScore === null
-                        ||
-                        !Number.isFinite(
-                            indexScore
                         )
-                    )
-                    {
-                        return;
-                    }
+                        ?? 0;
 
-                    combinedTotal +=
-                        indexScore
+                    combinedWeightedTotal +=
+                        normalizedScore
                         * indexWeight;
 
-                    combinedWeight +=
+                    combinedWeightTotal +=
                         indexWeight;
                 }
             );
 
-            /*
-            Do not assign a default score if this segment
-            has no active index calculation.
-            */
-
-            if (combinedWeight <= 0)
+            if (combinedWeightTotal <= 0)
             {
                 return;
             }
 
             const combinedScore =
-                combinedTotal
-                / combinedWeight;
+                combinedWeightedTotal
+                / combinedWeightTotal;
 
             state.scores.set(
                 segment.segmentId,
@@ -740,6 +823,8 @@ function buildWeightControls()
     state.indices.forEach(
         function (index)
         {
+            // Default equal index weight.
+
             state.indexW[
                 index.id
             ] =
@@ -749,8 +834,6 @@ function buildWeightControls()
                 index.id
             ] =
                 {};
-
-            // Index-level slider
 
             const indexSlider =
                 createWeightSlider(
@@ -770,7 +853,7 @@ function buildWeightControls()
                 indexSlider
             );
 
-            // Expandable field slider group
+            // Expandable field controls.
 
             const details =
                 document.createElement(
@@ -792,6 +875,8 @@ function buildWeightControls()
             index.fields.forEach(
                 function (field)
                 {
+                    // Default equal field weight.
+
                     state.fieldW[
                         index.id
                     ][field] =
@@ -819,61 +904,6 @@ function buildWeightControls()
 
             fieldWeightsDiv.appendChild(
                 details
-            );
-        }
-    );
-}
-
-// =====================================================
-// PREPARE FIELD NORMALIZATION
-// =====================================================
-
-function prepareFieldScales()
-{
-    state.indices.forEach(
-        function (index)
-        {
-            index.scales =
-                {};
-
-            index.fields.forEach(
-                function (field)
-                {
-                    let maximumValue =
-                        1;
-
-                    Object.values(
-                        index.rows
-                    ).forEach(
-                        function (row)
-                        {
-                            const value =
-                                Number(
-                                    row.values[
-                                        field
-                                    ]
-                                );
-
-                            if (
-                                Number.isFinite(
-                                    value
-                                )
-                            )
-                            {
-                                maximumValue =
-                                    Math.max(
-                                        maximumValue,
-                                        value
-                                    );
-                            }
-                        }
-                    );
-
-                    index.scales[
-                        field
-                    ] =
-                        maximumValue;
-                }
             );
         }
     );
@@ -1005,11 +1035,10 @@ function draw()
         mapFrame();
 
     /*
-    Draw the basemap using the same extent and scale used
-    for the linework.
+    Draw the basemap using the same scale as the linework.
 
-    The -7 pixel adjustment moves only the basemap upward.
-    The roadway line coordinates remain fixed.
+    The basemap is shifted upward by 7 screen pixels.
+    The linework remains fixed.
     */
 
     if (
@@ -1033,8 +1062,8 @@ function draw()
     }
 
     /*
-    Do not draw any roadways if all five index weights
-    are zero.
+    Do not display any roadway lines when all main index
+    sliders are zero.
     */
 
     if (
@@ -1055,11 +1084,6 @@ function draw()
     state.segments.forEach(
         function (segment)
         {
-            /*
-            Only draw a segment when it has both a calculated
-            score and a valid four-bucket assignment.
-            */
-
             if (
                 !state.scores.has(
                     segment.segmentId
@@ -1083,9 +1107,9 @@ function draw()
             );
 
             /*
-            One colored stroke only.
+            Draw only the colored line.
 
-            No dark, gray, or white casing is applied.
+            No casing or outline is drawn.
             */
 
             ctx.strokeStyle =
@@ -1150,8 +1174,6 @@ Promise.all([
         state.indices =
             results[1];
 
-        prepareFieldScales();
-
         buildWeightControls();
 
         recalculateScores();
@@ -1196,5 +1218,5 @@ window.addEventListener(
     resizeCanvas
 );
 
-// Initial canvas sizing
+// Initial canvas sizing.
 resizeCanvas();
