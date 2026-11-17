@@ -1,10 +1,10 @@
 // =====================================================
 // US 83 NEED INDEX EXPLORER
-// VERSION 5.1
+// VERSION 5.2
 // =====================================================
 
 console.log(
-    "US 83 Need Index Explorer version 5.1"
+    "US 83 Need Index Explorer version 5.2"
 );
 
 // =====================================================
@@ -62,19 +62,19 @@ const COLOR_CLASSES = [
     {
         minimum: 0.25,
         maximum: 0.50,
-        label: ">0.25 - 0.50",
+        label: "&gt;0.25 - 0.50",
         color: "#FFFF00"
     },
     {
         minimum: 0.50,
         maximum: 0.75,
-        label: ">0.50 - 0.75",
+        label: "&gt;0.50 - 0.75",
         color: "#E69800"
     },
     {
         minimum: 0.75,
         maximum: Infinity,
-        label: ">0.75",
+        label: "&gt;0.75",
         color: "#FF0000"
     }
 ];
@@ -97,7 +97,10 @@ const state = {
     indexW: {},
 
     // Individual field slider weights.
-    fieldW: {}
+    fieldW: {},
+
+    // Controls whether the Future Volume Factor is used.
+    useFutureVolumeFactor: true
 };
 
 // =====================================================
@@ -333,7 +336,7 @@ function safeNumber(
 // =====================================================
 
 /*
-This reproduces:
+When the Future Volume Factor toggle is on, this reproduces:
 
 (
     Field1 * Weight1
@@ -341,6 +344,14 @@ This reproduces:
     + ...
 )
 * FutureVolumeFactor
+
+When the toggle is off, it reproduces:
+
+(
+    Field1 * Weight1
+    + Field2 * Weight2
+    + ...
+)
 
 The weighted fields are summed directly.
 
@@ -378,6 +389,13 @@ function calculateRawIndexScore(
                 * fieldWeight;
         }
     );
+
+    if (
+        !state.useFutureVolumeFactor
+    )
+    {
+        return weightedFieldTotal;
+    }
 
     const futureVolumeFactor =
         safeNumber(
@@ -417,7 +435,6 @@ function calculateNormalizedIndexScores(
     let peakScore = 0;
 
     // First pass: calculate raw scores and find the peak.
-
     state.segments.forEach(
         function (segment)
         {
@@ -451,7 +468,6 @@ function calculateNormalizedIndexScores(
         new Map();
 
     // Second pass: divide each raw score by the peak.
-
     state.segments.forEach(
         function (segment)
         {
@@ -575,7 +591,6 @@ function assignFixedColorClasses()
 function recalculateScores()
 {
     state.scores.clear();
-
     state.colorClasses.clear();
 
     /*
@@ -592,7 +607,6 @@ function recalculateScores()
             "All index weights are zero. No lines are displayed.";
 
         draw();
-
         return;
     }
 
@@ -682,9 +696,7 @@ function recalculateScores()
     );
 
     assignFixedColorClasses();
-
     updateStatusMessage();
-
     draw();
 }
 
@@ -831,7 +843,6 @@ function buildWeightControls()
         function (index)
         {
             // Equal default index weight.
-
             state.indexW[
                 index.id
             ] =
@@ -861,7 +872,6 @@ function buildWeightControls()
             );
 
             // Expandable field controls.
-
             const details =
                 document.createElement(
                     "details"
@@ -883,7 +893,6 @@ function buildWeightControls()
                 function (field)
                 {
                     // Equal default field weight.
-
                     state.fieldW[
                         index.id
                     ][field] =
@@ -914,6 +923,83 @@ function buildWeightControls()
             );
         }
     );
+}
+
+// =====================================================
+// BUILD FUTURE VOLUME FACTOR TOGGLE
+// =====================================================
+
+function buildFutureVolumeToggle()
+{
+    const container =
+        document.createElement(
+            "div"
+        );
+
+    container.className =
+        "slider";
+
+    const label =
+        document.createElement(
+            "label"
+        );
+
+    const labelName =
+        document.createElement(
+            "span"
+        );
+
+    labelName.textContent =
+        "Apply Future Volume Factor";
+
+    const input =
+        document.createElement(
+            "input"
+        );
+
+    input.type =
+        "checkbox";
+
+    input.id =
+        "futureVolumeToggle";
+
+    input.checked =
+        state.useFutureVolumeFactor;
+
+    input.addEventListener(
+        "change",
+        function ()
+        {
+            state.useFutureVolumeFactor =
+                input.checked;
+
+            recalculateScores();
+        }
+    );
+
+    label.appendChild(
+        labelName
+    );
+
+    label.appendChild(
+        input
+    );
+
+    container.appendChild(
+        label
+    );
+
+    if (
+        resetButton
+        &&
+        resetButton.parentNode
+    )
+    {
+        resetButton.parentNode.insertBefore(
+            container,
+            resetButton
+        );
+    }
 }
 
 // =====================================================
@@ -1169,7 +1255,6 @@ Promise.all([
         }
     )
 ])
-
 .then(
     function (results)
     {
@@ -1180,13 +1265,11 @@ Promise.all([
             results[1];
 
         buildWeightControls();
-
+        buildFutureVolumeToggle();
         recalculateScores();
-
         resizeCanvas();
     }
 )
-
 .catch(
     function (error)
     {
