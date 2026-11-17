@@ -1,10 +1,10 @@
 // =====================================================
 // US 83 NEED INDEX EXPLORER
-// VERSION 4.0
+// VERSION 4.1
 // =====================================================
 
 console.log(
-    "US 83 Need Index Explorer version 4.0"
+    "US 83 Need Index Explorer version 4.1"
 );
 
 // =====================================================
@@ -23,18 +23,18 @@ const BASEMAP =
     "https://raw.githubusercontent.com/JSMITHHDR/US-83/5165469a29e097b35ddc90d6901b971ff3d13df0/State%20Narrow.png";
 
 // =====================================================
-// DISPLAY SETTINGS
+// FIXED DISPLAY SETTINGS
 // =====================================================
 
 const DISPLAY = {
-    // Positive X moves the basemap right.
+    // Positive values move the basemap right.
     basemapShiftX: 0,
 
-    // Positive Y moves the basemap down.
-    basemapShiftY: 20,
+    // Negative values move the basemap up.
+    basemapShiftY: -7,
 
-    // Default colored-line width.
-    lineWidth: 18
+    // Fixed roadway line thickness.
+    lineWidth: 8
 };
 
 // =====================================================
@@ -45,16 +45,16 @@ const state = {
     segments: [],
     indices: [],
 
-    // Actual combined Need Index by Segment ID.
+    // Calculated combined Need Index by Segment ID.
     scores: new Map(),
 
-    // Four-bucket color assignment by Segment ID.
+    // Four-bucket classification by Segment ID.
     colorBuckets: new Map(),
 
-    // Index-level weights.
+    // Index-level slider weights.
     indexW: {},
 
-    // Field-level weights.
+    // Field-level slider weights.
     fieldW: {}
 };
 
@@ -117,14 +117,8 @@ basemap.onerror = function ()
 };
 
 // =====================================================
-// MAP FRAME
+// ASPECT-PRESERVING MAP FRAME
 // =====================================================
-
-/*
-The basemap and linework use the same aspect-preserving
-frame. This prevents the map from being stretched to the
-canvas dimensions.
-*/
 
 function mapFrame()
 {
@@ -141,6 +135,13 @@ function mapFrame()
     const extentHeight =
         EXT.north
         - EXT.south;
+
+    /*
+    One scale is used for both dimensions.
+
+    This prevents the basemap and linework from being
+    independently stretched to the canvas width and height.
+    */
 
     const scale =
         Math.min(
@@ -223,15 +224,15 @@ function project(
 // =====================================================
 
 /*
-Segments do not use a continuous gradient.
+The segments are ranked by their current combined Need Index.
 
-Each segment falls into one of four buckets based on its
-rank among all currently scored segments:
+The ranked segments are divided into four approximately
+equal groups:
 
-Bucket 1: Lowest 25 percent
-Bucket 2: 25th through 50th percentile
-Bucket 3: 50th through 75th percentile
-Bucket 4: Highest 25 percent
+1. Lower need
+2. Moderate need
+3. High need
+4. Highest need
 */
 
 const COLOR_BUCKETS = [
@@ -241,7 +242,7 @@ const COLOR_BUCKETS = [
     },
     {
         label: "Moderate need",
-        color: "#C8C400"
+        color: "#D4C900"
     },
     {
         label: "High need",
@@ -257,18 +258,18 @@ function getBucketColor(
     bucketNumber
 )
 {
-    const bucket =
-        COLOR_BUCKETS[
-            Math.max(
-                0,
-                Math.min(
-                    3,
-                    bucketNumber
-                )
+    const safeBucketNumber =
+        Math.max(
+            0,
+            Math.min(
+                COLOR_BUCKETS.length - 1,
+                bucketNumber
             )
-        ];
+        );
 
-    return bucket.color;
+    return COLOR_BUCKETS[
+        safeBucketNumber
+    ].color;
 }
 
 // =====================================================
@@ -285,7 +286,9 @@ function activeIndexWeightTotal()
         {
             const weight =
                 Number(
-                    state.indexW[index.id]
+                    state.indexW[
+                        index.id
+                    ]
                     ?? 0
                 );
 
@@ -300,7 +303,7 @@ function activeIndexWeightTotal()
 }
 
 // =====================================================
-// CALCULATE ONE INDEX SCORE
+// CALCULATE ONE NEED INDEX
 // =====================================================
 
 function calculateIndexScore(
@@ -315,7 +318,16 @@ function calculateIndexScore(
         function (field)
         {
             const rawValue =
-                row.values[field];
+                row.values[
+                    field
+                ];
+
+            /*
+            Exclude missing and nonnumeric values.
+
+            This prevents missing values from behaving as
+            zero values in the weighted average.
+            */
 
             if (
                 rawValue === null
@@ -339,8 +351,8 @@ function calculateIndexScore(
                 );
 
             /*
-            A field slider set to zero removes that field
-            from the index calculation and denominator.
+            A field weight of zero removes the field from
+            both the numerator and denominator.
             */
 
             if (fieldWeight <= 0)
@@ -350,7 +362,9 @@ function calculateIndexScore(
 
             const fieldScale =
                 Number(
-                    index.scales?.[field]
+                    index.scales?.[
+                        field
+                    ]
                     ?? 1
                 );
 
@@ -373,8 +387,10 @@ function calculateIndexScore(
     );
 
     /*
-    Returning null distinguishes "no active fields" from
-    an actual calculated score of zero.
+    Null means the index has no active fields.
+
+    This is different from a legitimate calculated score
+    of zero.
     */
 
     if (weightTotal <= 0)
@@ -403,7 +419,7 @@ function calculateIndexScore(
 }
 
 // =====================================================
-// ASSIGN THE FOUR COLOR BUCKETS
+// ASSIGN FOUR COLOR BUCKETS
 // =====================================================
 
 function assignColorBuckets()
@@ -449,14 +465,6 @@ function assignColorBuckets()
         {
             const segmentId =
                 entry[0];
-
-            /*
-            Rank-based quartiles produce four visible groups,
-            even when the raw Need Index values are clustered.
-
-            The highest-ranked segment is guaranteed to enter
-            Bucket 4, and the lowest enters Bucket 1.
-            */
 
             const percentile =
                 segmentCount === 1
@@ -505,10 +513,11 @@ function recalculateScores()
     state.colorBuckets.clear();
 
     /*
-    When all five index sliders are zero, stop immediately.
+    If all index sliders are zero, stop before assigning
+    any segment scores.
 
-    No segments receive a default zero score, so no default
-    green lines are displayed.
+    This prevents the previous default green line from
+    appearing when every index is turned off.
     */
 
     if (
@@ -540,6 +549,11 @@ function recalculateScores()
                             ?? 0
                         );
 
+                    /*
+                    An index weight of zero removes that index
+                    from the combined Need Index.
+                    */
+
                     if (indexWeight <= 0)
                     {
                         return;
@@ -562,8 +576,8 @@ function recalculateScores()
                         );
 
                     /*
-                    Null means every field in the index has
-                    been removed by the field sliders.
+                    Null means every field in this index has
+                    been disabled or is missing.
                     */
 
                     if (
@@ -587,8 +601,8 @@ function recalculateScores()
             );
 
             /*
-            Do not assign a default score when a segment has
-            no active index calculation.
+            Do not assign a default score if this segment
+            has no active index calculation.
             */
 
             if (combinedWeight <= 0)
@@ -596,10 +610,13 @@ function recalculateScores()
                 return;
             }
 
+            const combinedScore =
+                combinedTotal
+                / combinedWeight;
+
             state.scores.set(
                 segment.segmentId,
-                combinedTotal
-                / combinedWeight
+                combinedScore
             );
         }
     );
@@ -613,7 +630,7 @@ function recalculateScores()
 }
 
 // =====================================================
-// CREATE A STANDARD WEIGHT SLIDER
+// CREATE WEIGHT SLIDER
 // =====================================================
 
 function createWeightSlider(
@@ -709,7 +726,7 @@ function createWeightSlider(
 }
 
 // =====================================================
-// BUILD INDEX AND FIELD CONTROLS
+// BUILD INDEX AND FIELD WEIGHT CONTROLS
 // =====================================================
 
 function buildWeightControls()
@@ -723,11 +740,17 @@ function buildWeightControls()
     state.indices.forEach(
         function (index)
         {
-            state.indexW[index.id] =
+            state.indexW[
+                index.id
+            ] =
                 1;
 
-            state.fieldW[index.id] =
+            state.fieldW[
+                index.id
+            ] =
                 {};
+
+            // Index-level slider
 
             const indexSlider =
                 createWeightSlider(
@@ -746,6 +769,8 @@ function buildWeightControls()
             indexWeightsDiv.appendChild(
                 indexSlider
             );
+
+            // Expandable field slider group
 
             const details =
                 document.createElement(
@@ -800,385 +825,6 @@ function buildWeightControls()
 }
 
 // =====================================================
-// BUILD DISPLAY CONTROLS
-// =====================================================
-
-function buildDisplayControls()
-{
-    /*
-    Remove an existing section first. This prevents duplicate
-    controls if the setup function is called more than once.
-    */
-
-    const existingSection =
-        document.getElementById(
-            "displayControls"
-        );
-
-    if (existingSection)
-    {
-        existingSection.remove();
-    }
-
-    const section =
-        document.createElement(
-            "section"
-        );
-
-    section.id =
-        "displayControls";
-
-    const heading =
-        document.createElement(
-            "h2"
-        );
-
-    heading.textContent =
-        "Map display";
-
-    section.appendChild(
-        heading
-    );
-
-    // -------------------------------------------------
-    // LINE THICKNESS
-    // -------------------------------------------------
-
-    const thicknessContainer =
-        document.createElement(
-            "div"
-        );
-
-    thicknessContainer.className =
-        "slider";
-
-    const thicknessLabel =
-        document.createElement(
-            "label"
-        );
-
-    const thicknessName =
-        document.createElement(
-            "span"
-        );
-
-    thicknessName.textContent =
-        "Line thickness";
-
-    const thicknessOutput =
-        document.createElement(
-            "output"
-        );
-
-    thicknessOutput.textContent =
-        `${DISPLAY.lineWidth}px`;
-
-    thicknessLabel.appendChild(
-        thicknessName
-    );
-
-    thicknessLabel.appendChild(
-        thicknessOutput
-    );
-
-    const thicknessSlider =
-        document.createElement(
-            "input"
-        );
-
-    thicknessSlider.type =
-        "range";
-
-    thicknessSlider.min =
-        "2";
-
-    thicknessSlider.max =
-        "40";
-
-    thicknessSlider.step =
-        "1";
-
-    thicknessSlider.value =
-        String(
-            DISPLAY.lineWidth
-        );
-
-    thicknessSlider.addEventListener(
-        "input",
-        function ()
-        {
-            DISPLAY.lineWidth =
-                Number(
-                    thicknessSlider.value
-                );
-
-            thicknessOutput.textContent =
-                `${DISPLAY.lineWidth}px`;
-
-            draw();
-        }
-    );
-
-    thicknessContainer.appendChild(
-        thicknessLabel
-    );
-
-    thicknessContainer.appendChild(
-        thicknessSlider
-    );
-
-    section.appendChild(
-        thicknessContainer
-    );
-
-    // -------------------------------------------------
-    // VERTICAL BASEMAP SHIFT
-    // -------------------------------------------------
-
-    const verticalContainer =
-        document.createElement(
-            "div"
-        );
-
-    verticalContainer.className =
-        "slider";
-
-    const verticalLabel =
-        document.createElement(
-            "label"
-        );
-
-    const verticalName =
-        document.createElement(
-            "span"
-        );
-
-    verticalName.textContent =
-        "Basemap vertical shift";
-
-    const verticalOutput =
-        document.createElement(
-            "output"
-        );
-
-    verticalOutput.textContent =
-        `${DISPLAY.basemapShiftY}px`;
-
-    verticalLabel.appendChild(
-        verticalName
-    );
-
-    verticalLabel.appendChild(
-        verticalOutput
-    );
-
-    const verticalSlider =
-        document.createElement(
-            "input"
-        );
-
-    verticalSlider.type =
-        "range";
-
-    verticalSlider.min =
-        "-150";
-
-    verticalSlider.max =
-        "150";
-
-    verticalSlider.step =
-        "1";
-
-    verticalSlider.value =
-        String(
-            DISPLAY.basemapShiftY
-        );
-
-    verticalSlider.addEventListener(
-        "input",
-        function ()
-        {
-            DISPLAY.basemapShiftY =
-                Number(
-                    verticalSlider.value
-                );
-
-            verticalOutput.textContent =
-                `${DISPLAY.basemapShiftY}px`;
-
-            draw();
-        }
-    );
-
-    verticalContainer.appendChild(
-        verticalLabel
-    );
-
-    verticalContainer.appendChild(
-        verticalSlider
-    );
-
-    section.appendChild(
-        verticalContainer
-    );
-
-    // -------------------------------------------------
-    // HORIZONTAL BASEMAP SHIFT
-    // -------------------------------------------------
-
-    const horizontalContainer =
-        document.createElement(
-            "div"
-        );
-
-    horizontalContainer.className =
-        "slider";
-
-    const horizontalLabel =
-        document.createElement(
-            "label"
-        );
-
-    const horizontalName =
-        document.createElement(
-            "span"
-        );
-
-    horizontalName.textContent =
-        "Basemap horizontal shift";
-
-    const horizontalOutput =
-        document.createElement(
-            "output"
-        );
-
-    horizontalOutput.textContent =
-        `${DISPLAY.basemapShiftX}px`;
-
-    horizontalLabel.appendChild(
-        horizontalName
-    );
-
-    horizontalLabel.appendChild(
-        horizontalOutput
-    );
-
-    const horizontalSlider =
-        document.createElement(
-            "input"
-        );
-
-    horizontalSlider.type =
-        "range";
-
-    horizontalSlider.min =
-        "-150";
-
-    horizontalSlider.max =
-        "150";
-
-    horizontalSlider.step =
-        "1";
-
-    horizontalSlider.value =
-        String(
-            DISPLAY.basemapShiftX
-        );
-
-    horizontalSlider.addEventListener(
-        "input",
-        function ()
-        {
-            DISPLAY.basemapShiftX =
-                Number(
-                    horizontalSlider.value
-                );
-
-            horizontalOutput.textContent =
-                `${DISPLAY.basemapShiftX}px`;
-
-            draw();
-        }
-    );
-
-    horizontalContainer.appendChild(
-        horizontalLabel
-    );
-
-    horizontalContainer.appendChild(
-        horizontalSlider
-    );
-
-    section.appendChild(
-        horizontalContainer
-    );
-
-    // -------------------------------------------------
-    // RESET DISPLAY BUTTON
-    // -------------------------------------------------
-
-    const resetDisplayButton =
-        document.createElement(
-            "button"
-        );
-
-    resetDisplayButton.type =
-        "button";
-
-    resetDisplayButton.textContent =
-        "Reset map display";
-
-    resetDisplayButton.addEventListener(
-        "click",
-        function ()
-        {
-            DISPLAY.lineWidth = 18;
-            DISPLAY.basemapShiftX = 0;
-            DISPLAY.basemapShiftY = 20;
-
-            thicknessSlider.value =
-                "18";
-
-            horizontalSlider.value =
-                "0";
-
-            verticalSlider.value =
-                "20";
-
-            thicknessOutput.textContent =
-                "18px";
-
-            horizontalOutput.textContent =
-                "0px";
-
-            verticalOutput.textContent =
-                "20px";
-
-            draw();
-        }
-    );
-
-    section.appendChild(
-        resetDisplayButton
-    );
-
-    /*
-    Insert the display section immediately before the
-    index-weight section.
-    */
-
-    const indexSection =
-        indexWeightsDiv.closest(
-            "section"
-        );
-
-    indexSection.parentNode.insertBefore(
-        section,
-        indexSection
-    );
-}
-
-// =====================================================
 // PREPARE FIELD NORMALIZATION
 // =====================================================
 
@@ -1223,7 +869,9 @@ function prepareFieldScales()
                         }
                     );
 
-                    index.scales[field] =
+                    index.scales[
+                        field
+                    ] =
                         maximumValue;
                 }
             );
@@ -1356,7 +1004,13 @@ function draw()
     const frame =
         mapFrame();
 
-    // Draw the shifted basemap.
+    /*
+    Draw the basemap using the same extent and scale used
+    for the linework.
+
+    The -7 pixel adjustment moves only the basemap upward.
+    The roadway line coordinates remain fixed.
+    */
 
     if (
         basemap.complete
@@ -1379,8 +1033,8 @@ function draw()
     }
 
     /*
-    This guard prevents any default green lines when all
-    five index weights are zero.
+    Do not draw any roadways if all five index weights
+    are zero.
     */
 
     if (
@@ -1402,8 +1056,8 @@ function draw()
         function (segment)
         {
             /*
-            Only draw segments that have both a calculated
-            score and one of the four bucket assignments.
+            Only draw a segment when it has both a calculated
+            score and a valid four-bucket assignment.
             */
 
             if (
@@ -1429,8 +1083,9 @@ function draw()
             );
 
             /*
-            There is deliberately only one stroke.
-            No black, gray, or white line outline is drawn.
+            One colored stroke only.
+
+            No dark, gray, or white casing is applied.
             */
 
             ctx.strokeStyle =
@@ -1497,8 +1152,6 @@ Promise.all([
 
         prepareFieldScales();
 
-        buildDisplayControls();
-
         buildWeightControls();
 
         recalculateScores();
@@ -1543,4 +1196,5 @@ window.addEventListener(
     resizeCanvas
 );
 
+// Initial canvas sizing
 resizeCanvas();
