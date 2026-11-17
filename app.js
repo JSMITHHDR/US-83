@@ -238,19 +238,19 @@ equal groups:
 const COLOR_BUCKETS = [
     {
         label: "Lower need",
-        color: "#2E7D32"
+        color: "#38A800"
     },
     {
         label: "Moderate need",
-        color: "#D4C900"
+        color: "#FFFF00"
     },
     {
         label: "High need",
-        color: "#F9A825"
+        color: "#E69800"
     },
     {
         label: "Highest need",
-        color: "#C62828"
+        color: "#FF0000"
     }
 ];
 
