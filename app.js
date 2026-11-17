@@ -1,10 +1,10 @@
 // =====================================================
 // US 83 NEED INDEX EXPLORER
-// VERSION 5.0
+// VERSION 5.1
 // =====================================================
 
 console.log(
-    "US 83 Need Index Explorer version 5.0"
+    "US 83 Need Index Explorer version 5.1"
 );
 
 // =====================================================
@@ -38,6 +38,48 @@ const DISPLAY = {
 };
 
 // =====================================================
+// FIXED COLOR RANGES
+// =====================================================
+
+/*
+The colors represent fixed combined Need Index ranges.
+
+These ranges do not change when the sliders move:
+
+0.00 through 0.25 = Green
+Greater than 0.25 through 0.50 = Yellow
+Greater than 0.50 through 0.75 = Orange
+Greater than 0.75 = Red
+*/
+
+const COLOR_CLASSES = [
+    {
+        minimum: 0.00,
+        maximum: 0.25,
+        label: "0.00 - 0.25",
+        color: "#38A800"
+    },
+    {
+        minimum: 0.25,
+        maximum: 0.50,
+        label: ">0.25 - 0.50",
+        color: "#FFFF00"
+    },
+    {
+        minimum: 0.50,
+        maximum: 0.75,
+        label: ">0.50 - 0.75",
+        color: "#E69800"
+    },
+    {
+        minimum: 0.75,
+        maximum: Infinity,
+        label: ">0.75",
+        color: "#FF0000"
+    }
+];
+
+// =====================================================
 // APPLICATION STATE
 // =====================================================
 
@@ -45,11 +87,11 @@ const state = {
     segments: [],
     indices: [],
 
-    // Final combined score by Segment ID.
+    // Final combined Need Index by Segment ID.
     scores: new Map(),
 
-    // Four-bucket classification by Segment ID.
-    colorBuckets: new Map(),
+    // Fixed color-class assignment by Segment ID.
+    colorClasses: new Map(),
 
     // Main index-level slider weights.
     indexW: {},
@@ -139,8 +181,8 @@ function mapFrame()
     /*
     Use one common scale for both dimensions.
 
-    This prevents the background and the linework from
-    being stretched independently.
+    This keeps the basemap and linework from being
+    independently stretched.
     */
 
     const scale =
@@ -220,57 +262,6 @@ function project(
 }
 
 // =====================================================
-// FOUR DISCRETE COLOR BUCKETS
-// =====================================================
-
-/*
-The final combined scores are ranked and divided into
-four approximately equal groups.
-
-Bucket 1: Lowest 25 percent
-Bucket 2: 25th to 50th percentile
-Bucket 3: 50th to 75th percentile
-Bucket 4: Highest 25 percent
-*/
-
-const COLOR_BUCKETS = [
-    {
-        label: "Lower need",
-        color: "#2E7D32"
-    },
-    {
-        label: "Moderate need",
-        color: "#D4C900"
-    },
-    {
-        label: "High need",
-        color: "#F9A825"
-    },
-    {
-        label: "Highest need",
-        color: "#C62828"
-    }
-];
-
-function getBucketColor(
-    bucketNumber
-)
-{
-    const safeBucket =
-        Math.max(
-            0,
-            Math.min(
-                COLOR_BUCKETS.length - 1,
-                bucketNumber
-            )
-        );
-
-    return COLOR_BUCKETS[
-        safeBucket
-    ].color;
-}
-
-// =====================================================
 // TOTAL ACTIVE INDEX WEIGHT
 // =====================================================
 
@@ -342,7 +333,7 @@ function safeNumber(
 // =====================================================
 
 /*
-This reproduces the first part of the Excel formula:
+This reproduces:
 
 (
     Field1 * Weight1
@@ -351,8 +342,10 @@ This reproduces the first part of the Excel formula:
 )
 * FutureVolumeFactor
 
-The field-weight total is not used as a denominator.
-The input fields are not individually normalized.
+The weighted fields are summed directly.
+
+The script does not divide by the sum of the field weights,
+and it does not normalize the individual fields.
 */
 
 function calculateRawIndexScore(
@@ -400,20 +393,18 @@ function calculateRawIndexScore(
 // =====================================================
 
 /*
-This reproduces:
+This reproduces the spreadsheet logic:
 
-peak, MAX(scores)
+peak = MAX(scores)
 
-and:
+normalized score =
+    IF(
+        peak = 0,
+        0,
+        segment raw score / peak
+    )
 
-IF(
-    peak=0,
-    0,
-    currentSegmentScore / peak
-)
-
-Every index is recalculated independently because each
-index has its own fields and field-slider weights.
+Each index is normalized independently.
 */
 
 function calculateNormalizedIndexScores(
@@ -425,7 +416,7 @@ function calculateNormalizedIndexScores(
 
     let peakScore = 0;
 
-    // First pass: calculate all raw scores and find peak.
+    // First pass: calculate raw scores and find the peak.
 
     state.segments.forEach(
         function (segment)
@@ -493,98 +484,85 @@ function calculateNormalizedIndexScores(
 }
 
 // =====================================================
-// ASSIGN FOUR COLOR BUCKETS
+// GET FIXED COLOR CLASS
 // =====================================================
 
-function assignColorBuckets()
+function getFixedColorClass(
+    score
+)
 {
-    state.colorBuckets.clear();
+    /*
+    Explicit boundary handling:
 
-    const sortedScores =
-        Array.from(
-            state.scores.entries()
-        )
-        .filter(
-            function (entry)
-            {
-                return Number.isFinite(
-                    entry[1]
-                );
-            }
-        )
-        .sort(
-            function (
-                first,
-                second
-            )
-            {
-                /*
-                Sort by score first.
-                */
+    0.25 stays green.
+    0.50 stays yellow.
+    0.75 stays orange.
+    Values above 0.75 are red.
+    */
 
-                const scoreDifference =
-                    first[1]
-                    - second[1];
-
-                if (scoreDifference !== 0)
-                {
-                    return scoreDifference;
-                }
-
-                /*
-                Use Segment ID as a stable tie breaker.
-                */
-
-                return String(
-                    first[0]
-                ).localeCompare(
-                    String(
-                        second[0]
-                    )
-                );
-            }
-        );
-
-    const segmentCount =
-        sortedScores.length;
-
-    if (segmentCount === 0)
+    if (score <= 0.25)
     {
-        return;
+        return 0;
     }
 
-    sortedScores.forEach(
+    if (score <= 0.50)
+    {
+        return 1;
+    }
+
+    if (score <= 0.75)
+    {
+        return 2;
+    }
+
+    return 3;
+}
+
+function getFixedColor(
+    score
+)
+{
+    const classNumber =
+        getFixedColorClass(
+            score
+        );
+
+    return COLOR_CLASSES[
+        classNumber
+    ].color;
+}
+
+// =====================================================
+// ASSIGN FIXED COLOR CLASSES
+// =====================================================
+
+function assignFixedColorClasses()
+{
+    state.colorClasses.clear();
+
+    state.scores.forEach(
         function (
-            entry,
-            sortedIndex
+            score,
+            segmentId
         )
         {
-            const segmentId =
-                entry[0];
+            if (
+                !Number.isFinite(
+                    score
+                )
+            )
+            {
+                return;
+            }
 
-            /*
-            Dividing the sorted position by the record count
-            creates four approximately equal groups.
-
-            With 55 segments, the groups will contain roughly
-            13 to 14 segments each.
-            */
-
-            const bucketNumber =
-                Math.min(
-                    3,
-                    Math.floor(
-                        (
-                            sortedIndex
-                            * 4
-                        )
-                        / segmentCount
-                    )
+            const classNumber =
+                getFixedColorClass(
+                    score
                 );
 
-            state.colorBuckets.set(
+            state.colorClasses.set(
                 segmentId,
-                bucketNumber
+                classNumber
             );
         }
     );
@@ -598,12 +576,12 @@ function recalculateScores()
 {
     state.scores.clear();
 
-    state.colorBuckets.clear();
+    state.colorClasses.clear();
 
     /*
     If every main index slider is zero, stop immediately.
 
-    No zero scores or green fallback lines are created.
+    No lines are created or assigned a default green color.
     */
 
     if (
@@ -619,8 +597,8 @@ function recalculateScores()
     }
 
     /*
-    Calculate the Excel-style normalized score for each
-    individual index first.
+    Calculate each individual index using the supplied
+    spreadsheet methodology.
     */
 
     const normalizedIndexResults =
@@ -639,14 +617,8 @@ function recalculateScores()
     );
 
     /*
-    Combine the normalized individual indexes using the
-    main index-level sliders.
-
-    Dividing by the total active index weight means that
-    only the relative index weights matter.
-
-    For example, weights of 1,1,1,1,1 provide the same
-    combination as 2,2,2,2,2.
+    Combine the normalized indexes using the main
+    index-level slider weights.
     */
 
     state.segments.forEach(
@@ -693,6 +665,11 @@ function recalculateScores()
                 return;
             }
 
+            /*
+            Divide by total active index weight so only the
+            relative weighting of the indexes matters.
+            */
+
             const combinedScore =
                 combinedWeightedTotal
                 / combinedWeightTotal;
@@ -704,12 +681,42 @@ function recalculateScores()
         }
     );
 
-    assignColorBuckets();
+    assignFixedColorClasses();
 
-    statusEl.textContent =
-        `${state.scores.size} scored segments displayed in four color buckets.`;
+    updateStatusMessage();
 
     draw();
+}
+
+// =====================================================
+// UPDATE STATUS MESSAGE
+// =====================================================
+
+function updateStatusMessage()
+{
+    const classCounts =
+        [
+            0,
+            0,
+            0,
+            0
+        ];
+
+    state.colorClasses.forEach(
+        function (classNumber)
+        {
+            classCounts[
+                classNumber
+            ] += 1;
+        }
+    );
+
+    statusEl.textContent =
+        `${state.scores.size} scored segments: `
+        + `${classCounts[0]} green, `
+        + `${classCounts[1]} yellow, `
+        + `${classCounts[2]} orange, `
+        + `${classCounts[3]} red.`;
 }
 
 // =====================================================
@@ -823,7 +830,7 @@ function buildWeightControls()
     state.indices.forEach(
         function (index)
         {
-            // Default equal index weight.
+            // Equal default index weight.
 
             state.indexW[
                 index.id
@@ -875,7 +882,7 @@ function buildWeightControls()
             index.fields.forEach(
                 function (field)
                 {
-                    // Default equal field weight.
+                    // Equal default field weight.
 
                     state.fieldW[
                         index.id
@@ -1035,10 +1042,8 @@ function draw()
         mapFrame();
 
     /*
-    Draw the basemap using the same scale as the linework.
-
-    The basemap is shifted upward by 7 screen pixels.
-    The linework remains fixed.
+    Draw the basemap with the fixed -7 pixel vertical
+    adjustment. Linework remains fixed.
     */
 
     if (
@@ -1062,7 +1067,7 @@ function draw()
     }
 
     /*
-    Do not display any roadway lines when all main index
+    Do not draw any roadway lines when all main index
     sliders are zero.
     */
 
@@ -1089,7 +1094,7 @@ function draw()
                     segment.segmentId
                 )
                 ||
-                !state.colorBuckets.has(
+                !state.colorClasses.has(
                     segment.segmentId
                 )
             )
@@ -1097,8 +1102,8 @@ function draw()
                 return;
             }
 
-            const bucketNumber =
-                state.colorBuckets.get(
+            const score =
+                state.scores.get(
                     segment.segmentId
                 );
 
@@ -1107,14 +1112,14 @@ function draw()
             );
 
             /*
-            Draw only the colored line.
+            Use one colored stroke only.
 
-            No casing or outline is drawn.
+            No casing or outline is applied.
             */
 
             ctx.strokeStyle =
-                getBucketColor(
-                    bucketNumber
+                getFixedColor(
+                    score
                 );
 
             ctx.lineWidth =
