@@ -13,9 +13,26 @@ const EXT = {
     north: 36.796656
 };
 
-// Use the raw GitHub URL rather than the normal GitHub page URL.
 const BASEMAP =
     "https://raw.githubusercontent.com/JSMITHHDR/US-83/5165469a29e097b35ddc90d6901b971ff3d13df0/State%20Narrow.png";
+
+// =====================================================
+// DISPLAY SETTINGS
+// =====================================================
+
+const DISPLAY = {
+    scoredLineWidth: 18,
+    lineCasingWidth: 22,
+    fallbackLineWidth: 14,
+
+    // Basemap-only vertical shift in screen pixels.
+    // Positive values move the basemap down.
+    basemapShiftY: 0,
+
+    // Optional horizontal adjustment.
+    // Positive values move the basemap right.
+    basemapShiftX: 0
+};
 
 // =====================================================
 // APPLICATION STATE
@@ -25,10 +42,10 @@ const state = {
     segments: [],
     indices: [],
     scores: new Map(),
+    percentileScores: new Map(),
     indexW: {},
     fieldW: {},
-    min: 0,
-    max: 1
+    hasActiveIndexWeights: true
 };
 
 // =====================================================
@@ -72,7 +89,7 @@ basemap.onload =
 basemap.onerror = function ()
 {
     statusEl.textContent +=
-        " Basemap could not load. Verify that the GitHub repository and image are publicly accessible.";
+        " Basemap could not load. Verify that the GitHub image is publicly accessible.";
 
     draw();
 };
@@ -80,13 +97,6 @@ basemap.onerror = function ()
 // =====================================================
 // MAP FRAME
 // =====================================================
-
-/*
-The basemap and linework must use the same frame.
-
-This uses one scale for both dimensions instead of
-stretching longitude and latitude independently.
-*/
 
 function mapFrame()
 {
@@ -114,15 +124,9 @@ function mapFrame()
     const drawHeight =
         extentHeight * scale;
 
-    const offsetX =
-        (canvasWidth - drawWidth) / 2;
-
-    const offsetY =
-        (canvasHeight - drawHeight) / 2;
-
     return {
-        x: offsetX,
-        y: offsetY,
+        x: (canvasWidth - drawWidth) / 2,
+        y: (canvasHeight - drawHeight) / 2,
         width: drawWidth,
         height: drawHeight,
         scale: scale
@@ -130,7 +134,7 @@ function mapFrame()
 }
 
 // =====================================================
-// PROJECT LONGITUDE AND LATITUDE
+// PROJECT LINEWORK
 // =====================================================
 
 function project(lon, lat)
@@ -138,21 +142,19 @@ function project(lon, lat)
     const frame =
         mapFrame();
 
-    const x =
+    return [
         frame.x +
         (
-            (lon - EXT.west)
-            * frame.scale
-        );
+            lon - EXT.west
+        )
+        * frame.scale,
 
-    const y =
         frame.y +
         (
-            (EXT.north - lat)
-            * frame.scale
-        );
-
-    return [x, y];
+            EXT.north - lat
+        )
+        * frame.scale
+    ];
 }
 
 // =====================================================
@@ -170,41 +172,97 @@ function colorRamp(value)
             )
         );
 
+    /*
+    The middle portion of the ramp is intentionally wider
+    so more segments appear yellow and orange.
+    */
+
     const colors = [
-        [0, 128, 0],      // green
-        [255, 255, 0],    // yellow
-        [215, 25, 28]     // red
+        {
+            stop: 0.00,
+            rgb: [0, 128, 0]
+        },
+        {
+            stop: 0.30,
+            rgb: [102, 189, 99]
+        },
+        {
+            stop: 0.45,
+            rgb: [255, 255, 0]
+        },
+        {
+            stop: 0.65,
+            rgb: [253, 174, 97]
+        },
+        {
+            stop: 0.80,
+            rgb: [239, 85, 59]
+        },
+        {
+            stop: 1.00,
+            rgb: [180, 0, 0]
+        }
     ];
 
-    const scaled =
-        value
-        * (colors.length - 1);
+    let lower =
+        colors[0];
 
-    const colorIndex =
-        Math.min(
-            colors.length - 2,
-            Math.floor(scaled)
-        );
+    let upper =
+        colors[colors.length - 1];
 
-    const fraction =
-        scaled - colorIndex;
+    for (
+        let index = 0;
+        index < colors.length - 1;
+        index++
+    )
+    {
+        if (
+            value >= colors[index].stop
+            &&
+            value <= colors[index + 1].stop
+        )
+        {
+            lower =
+                colors[index];
 
-    const firstColor =
-        colors[colorIndex];
+            upper =
+                colors[index + 1];
 
-    const secondColor =
-        colors[colorIndex + 1];
+            break;
+        }
+    }
+
+    const stopRange =
+        upper.stop
+        - lower.stop;
+
+    const interpolation =
+        stopRange > 0
+            ? (
+                value
+                - lower.stop
+            )
+            / stopRange
+            : 0;
 
     const output =
-        firstColor.map(
-            function (channel, index)
+        lower.rgb.map(
+            function (
+                lowerChannel,
+                channelIndex
+            )
             {
+                const upperChannel =
+                    upper.rgb[channelIndex];
+
                 return Math.round(
-                    channel +
+                    lowerChannel
+                    +
                     (
-                        secondColor[index] - channel
+                        upperChannel
+                        - lowerChannel
                     )
-                    * fraction
+                    * interpolation
                 );
             }
         );
@@ -213,10 +271,13 @@ function colorRamp(value)
 }
 
 // =====================================================
-// CALCULATE AN INDIVIDUAL NEED INDEX
+// CALCULATE INDIVIDUAL INDEX
 // =====================================================
 
-function calculateIndexScore(row, index)
+function calculateIndexScore(
+    row,
+    index
+)
 {
     let weightedTotal = 0;
     let weightTotal = 0;
@@ -232,36 +293,48 @@ function calculateIndexScore(row, index)
                 ||
                 rawValue === ""
                 ||
-                !Number.isFinite(Number(rawValue))
+                !Number.isFinite(
+                    Number(rawValue)
+                )
             )
             {
                 return;
             }
 
-            const weight =
+            const fieldWeight =
                 state.fieldW[index.id]?.[field]
                 ?? 1;
 
-            const scale =
+            /*
+            A field slider at zero completely removes that
+            field from the index denominator.
+            */
+
+            if (fieldWeight <= 0)
+            {
+                return;
+            }
+
+            const fieldScale =
                 index.scales?.[field]
                 ?? 1;
 
             const normalizedValue =
                 Number(rawValue)
-                / scale;
+                / fieldScale;
 
             weightedTotal +=
                 normalizedValue
-                * weight;
+                * fieldWeight;
 
             weightTotal +=
-                weight;
+                fieldWeight;
         }
     );
 
     if (weightTotal === 0)
     {
-        return 0;
+        return null;
     }
 
     const weightedMean =
@@ -271,22 +344,129 @@ function calculateIndexScore(row, index)
     const futureVolumeFactor =
         Number(
             row.futureVolumeFactor
-        )
-        || 1;
+        );
 
     return weightedMean
-        * futureVolumeFactor;
+        * (
+            Number.isFinite(
+                futureVolumeFactor
+            )
+                ? futureVolumeFactor
+                : 1
+        );
 }
 
 // =====================================================
-// RECALCULATE COMBINED NEED INDEX
+// BUILD PERCENTILE COLOR SCORES
+// =====================================================
+
+function calculatePercentileScores()
+{
+    state.percentileScores.clear();
+
+    const validScores =
+        Array.from(
+            state.scores.entries()
+        )
+        .filter(
+            function (entry)
+            {
+                return Number.isFinite(
+                    entry[1]
+                );
+            }
+        )
+        .sort(
+            function (first, second)
+            {
+                return first[1]
+                    - second[1];
+            }
+        );
+
+    if (validScores.length === 0)
+    {
+        return;
+    }
+
+    /*
+    Percentile rank spreads the 55 segments across the
+    full color ramp.
+
+    This prevents a few high outliers from forcing most
+    segments into the green portion of the ramp.
+    */
+
+    validScores.forEach(
+        function (
+            entry,
+            sortedIndex
+        )
+        {
+            const segmentId =
+                entry[0];
+
+            const percentile =
+                validScores.length === 1
+                    ? 0.5
+                    : sortedIndex
+                    / (
+                        validScores.length - 1
+                    );
+
+            state.percentileScores.set(
+                segmentId,
+                percentile
+            );
+        }
+    );
+}
+
+// =====================================================
+// RECALCULATE COMBINED SCORES
 // =====================================================
 
 function recalculateScores()
 {
     state.scores.clear();
 
-    const scoreValues = [];
+    const activeIndexWeights =
+        state.indices
+        .map(
+            function (index)
+            {
+                return Number(
+                    state.indexW[index.id]
+                    ?? 0
+                );
+            }
+        )
+        .filter(
+            function (weight)
+            {
+                return weight > 0;
+            }
+        );
+
+    state.hasActiveIndexWeights =
+        activeIndexWeights.length > 0;
+
+    /*
+    If every index slider is zero, clear the scores and
+    draw only the basemap. No default green lines.
+    */
+
+    if (!state.hasActiveIndexWeights)
+    {
+        state.percentileScores.clear();
+
+        statusEl.textContent =
+            "All index weights are zero. No scored lines are displayed.";
+
+        draw();
+
+        return;
+    }
 
     state.segments.forEach(
         function (segment)
@@ -297,6 +477,17 @@ function recalculateScores()
             state.indices.forEach(
                 function (index)
                 {
+                    const indexWeight =
+                        Number(
+                            state.indexW[index.id]
+                            ?? 0
+                        );
+
+                    if (indexWeight <= 0)
+                    {
+                        return;
+                    }
+
                     const row =
                         index.rows[
                             segment.segmentId
@@ -307,25 +498,25 @@ function recalculateScores()
                         return;
                     }
 
-                    const indexWeight =
-                        state.indexW[index.id]
-                        ?? 1;
-
-                    /*
-                    If an index slider is zero, that index
-                    is excluded from the combined score.
-                    */
-
-                    if (indexWeight <= 0)
-                    {
-                        return;
-                    }
-
                     const indexScore =
                         calculateIndexScore(
                             row,
                             index
                         );
+
+                    /*
+                    If every field within this index is zero,
+                    the index is excluded for this segment.
+                    */
+
+                    if (
+                        indexScore === null
+                        ||
+                        !Number.isFinite(indexScore)
+                    )
+                    {
+                        return;
+                    }
 
                     combinedTotal +=
                         indexScore
@@ -336,41 +527,35 @@ function recalculateScores()
                 }
             );
 
-            const combinedScore =
-                combinedWeight > 0
-                    ? combinedTotal / combinedWeight
-                    : 0;
+            /*
+            Segments without an active score are not assigned
+            a zero. They are excluded from the rendered lines.
+            */
+
+            if (combinedWeight <= 0)
+            {
+                return;
+            }
 
             state.scores.set(
                 segment.segmentId,
-                combinedScore
-            );
-
-            scoreValues.push(
-                combinedScore
+                combinedTotal
+                / combinedWeight
             );
         }
     );
 
-    if (scoreValues.length > 0)
-    {
-        state.min =
-            Math.min(...scoreValues);
+    calculatePercentileScores();
 
-        state.max =
-            Math.max(...scoreValues);
-    }
-    else
-    {
-        state.min = 0;
-        state.max = 1;
-    }
+    statusEl.textContent =
+        `${state.segments.length} segments and `
+        + `${state.indices.length} indexes loaded.`;
 
     draw();
 }
 
 // =====================================================
-// CREATE A SLIDER
+// CREATE STANDARD WEIGHT SLIDER
 // =====================================================
 
 function createSlider(
@@ -454,7 +639,272 @@ function createSlider(
 }
 
 // =====================================================
-// BUILD SLIDER CONTROLS
+// CREATE BASEMAP SHIFT CONTROLS
+// =====================================================
+
+function buildBasemapShiftControls()
+{
+    const section =
+        document.createElement("section");
+
+    section.id =
+        "basemapControls";
+
+    const heading =
+        document.createElement("h2");
+
+    heading.textContent =
+        "Basemap alignment";
+
+    const description =
+        document.createElement("p");
+
+    description.textContent =
+        "Positive vertical values move the basemap down. The linework remains fixed.";
+
+    description.style.fontSize =
+        "12px";
+
+    description.style.color =
+        "#52606d";
+
+    description.style.lineHeight =
+        "1.35";
+
+    // Vertical shift row
+
+    const verticalContainer =
+        document.createElement("div");
+
+    verticalContainer.className =
+        "slider";
+
+    const verticalLabel =
+        document.createElement("label");
+
+    const verticalName =
+        document.createElement("span");
+
+    verticalName.textContent =
+        "Vertical shift";
+
+    const verticalOutput =
+        document.createElement("output");
+
+    verticalOutput.id =
+        "basemapShiftYValue";
+
+    verticalOutput.textContent =
+        `${DISPLAY.basemapShiftY}px`;
+
+    verticalLabel.appendChild(
+        verticalName
+    );
+
+    verticalLabel.appendChild(
+        verticalOutput
+    );
+
+    const verticalSlider =
+        document.createElement("input");
+
+    verticalSlider.id =
+        "basemapShiftY";
+
+    verticalSlider.type =
+        "range";
+
+    verticalSlider.min =
+        "-150";
+
+    verticalSlider.max =
+        "150";
+
+    verticalSlider.step =
+        "1";
+
+    verticalSlider.value =
+        String(
+            DISPLAY.basemapShiftY
+        );
+
+    verticalSlider.addEventListener(
+        "input",
+        function ()
+        {
+            DISPLAY.basemapShiftY =
+                Number(
+                    verticalSlider.value
+                );
+
+            verticalOutput.textContent =
+                `${DISPLAY.basemapShiftY}px`;
+
+            draw();
+        }
+    );
+
+    verticalContainer.appendChild(
+        verticalLabel
+    );
+
+    verticalContainer.appendChild(
+        verticalSlider
+    );
+
+    // Horizontal shift row
+
+    const horizontalContainer =
+        document.createElement("div");
+
+    horizontalContainer.className =
+        "slider";
+
+    const horizontalLabel =
+        document.createElement("label");
+
+    const horizontalName =
+        document.createElement("span");
+
+    horizontalName.textContent =
+        "Horizontal shift";
+
+    const horizontalOutput =
+        document.createElement("output");
+
+    horizontalOutput.id =
+        "basemapShiftXValue";
+
+    horizontalOutput.textContent =
+        `${DISPLAY.basemapShiftX}px`;
+
+    horizontalLabel.appendChild(
+        horizontalName
+    );
+
+    horizontalLabel.appendChild(
+        horizontalOutput
+    );
+
+    const horizontalSlider =
+        document.createElement("input");
+
+    horizontalSlider.id =
+        "basemapShiftX";
+
+    horizontalSlider.type =
+        "range";
+
+    horizontalSlider.min =
+        "-150";
+
+    horizontalSlider.max =
+        "150";
+
+    horizontalSlider.step =
+        "1";
+
+    horizontalSlider.value =
+        String(
+            DISPLAY.basemapShiftX
+        );
+
+    horizontalSlider.addEventListener(
+        "input",
+        function ()
+        {
+            DISPLAY.basemapShiftX =
+                Number(
+                    horizontalSlider.value
+                );
+
+            horizontalOutput.textContent =
+                `${DISPLAY.basemapShiftX}px`;
+
+            draw();
+        }
+    );
+
+    horizontalContainer.appendChild(
+        horizontalLabel
+    );
+
+    horizontalContainer.appendChild(
+        horizontalSlider
+    );
+
+    // Zero button
+
+    const zeroButton =
+        document.createElement("button");
+
+    zeroButton.type =
+        "button";
+
+    zeroButton.textContent =
+        "Reset basemap position";
+
+    zeroButton.addEventListener(
+        "click",
+        function ()
+        {
+            DISPLAY.basemapShiftX = 0;
+            DISPLAY.basemapShiftY = 0;
+
+            horizontalSlider.value =
+                "0";
+
+            verticalSlider.value =
+                "0";
+
+            horizontalOutput.textContent =
+                "0px";
+
+            verticalOutput.textContent =
+                "0px";
+
+            draw();
+        }
+    );
+
+    section.appendChild(
+        heading
+    );
+
+    section.appendChild(
+        description
+    );
+
+    section.appendChild(
+        verticalContainer
+    );
+
+    section.appendChild(
+        horizontalContainer
+    );
+
+    section.appendChild(
+        zeroButton
+    );
+
+    /*
+    The alignment controls are inserted above the
+    index-weight section.
+    */
+
+    const firstSection =
+        indexWeightsDiv.closest(
+            "section"
+        );
+
+    firstSection.parentNode.insertBefore(
+        section,
+        firstSection
+    );
+}
+
+// =====================================================
+// BUILD WEIGHT CONTROLS
 // =====================================================
 
 function buildControls()
@@ -474,8 +924,6 @@ function buildControls()
             state.fieldW[index.id] =
                 {};
 
-            // Index-level slider
-
             const indexSlider =
                 createSlider(
                     index.name,
@@ -491,8 +939,6 @@ function buildControls()
             indexWeightsDiv.appendChild(
                 indexSlider
             );
-
-            // Expandable field sliders
 
             const details =
                 document.createElement(
@@ -647,6 +1093,44 @@ function resizeCanvas()
 }
 
 // =====================================================
+// CREATE SEGMENT PATH
+// =====================================================
+
+function createSegmentPath(segment)
+{
+    ctx.beginPath();
+
+    segment.coordinates.forEach(
+        function (
+            coordinate,
+            coordinateIndex
+        )
+        {
+            const point =
+                project(
+                    coordinate[0],
+                    coordinate[1]
+                );
+
+            if (coordinateIndex === 0)
+            {
+                ctx.moveTo(
+                    point[0],
+                    point[1]
+                );
+            }
+            else
+            {
+                ctx.lineTo(
+                    point[0],
+                    point[1]
+                );
+            }
+        }
+    );
+}
+
+// =====================================================
 // DRAW MAP
 // =====================================================
 
@@ -665,11 +1149,6 @@ function draw()
         height
     );
 
-    /*
-    Fill the canvas behind the map. This makes any unused
-    space created by the aspect-preserving fit intentional.
-    */
-
     ctx.fillStyle =
         "#d7dde4";
 
@@ -683,7 +1162,10 @@ function draw()
     const frame =
         mapFrame();
 
-    // Draw the basemap using the same frame as the lines.
+    /*
+    The adjustment is applied only to the basemap.
+    This lets you align the image with the fixed linework.
+    */
 
     if (
         basemap.complete
@@ -693,11 +1175,23 @@ function draw()
     {
         ctx.drawImage(
             basemap,
-            frame.x,
-            frame.y,
+            frame.x
+                + DISPLAY.basemapShiftX,
+            frame.y
+                + DISPLAY.basemapShiftY,
             frame.width,
             frame.height
         );
+    }
+
+    /*
+    No active indexes means no green fallback lines.
+    Only the basemap remains visible.
+    */
+
+    if (!state.hasActiveIndexWeights)
+    {
+        return;
     }
 
     ctx.lineCap =
@@ -709,129 +1203,63 @@ function draw()
     state.segments.forEach(
         function (segment)
         {
-            const score =
-                state.scores.get(
-                    segment.segmentId
-                )
-                || 0;
-
-            const scoreRange =
-                state.max
-                - state.min;
-
-            const normalizedScore =
-                scoreRange > 0
-                    ? (
-                        score
-                        - state.min
-                    )
-                    / scoreRange
-                    : 0.5;
-
-            ctx.beginPath();
-
-            segment.coordinates.forEach(
-                function (
-                    coordinate,
-                    coordinateIndex
-                )
-                {
-                    const point =
-                        project(
-                            coordinate[0],
-                            coordinate[1]
-                        );
-
-                    if (coordinateIndex === 0)
-                    {
-                        ctx.moveTo(
-                            point[0],
-                            point[1]
-                        );
-                    }
-                    else
-                    {
-                        ctx.lineTo(
-                            point[0],
-                            point[1]
-                        );
-                    }
-                }
-            );
-
             /*
-            Draw a dark casing beneath each scored line.
-            This helps very thick lines remain visible over
-            both light and dark portions of the basemap.
+            Do not draw a segment if it has no calculated
+            score under the active slider configuration.
             */
 
-            if (state.indices.length > 0)
+            if (
+                !state.scores.has(
+                    segment.segmentId
+                )
+            )
             {
-                ctx.strokeStyle =
-                    "rgba(45,45,45,0.85)";
+                return;
+            }
 
-                ctx.lineWidth =
-                    22;
-
-                ctx.stroke();
-
-                /*
-                Rebuild the path before applying the colored
-                stroke because the casing has already drawn it.
-                */
-
-                ctx.beginPath();
-
-                segment.coordinates.forEach(
-                    function (
-                        coordinate,
-                        coordinateIndex
-                    )
-                    {
-                        const point =
-                            project(
-                                coordinate[0],
-                                coordinate[1]
-                            );
-
-                        if (coordinateIndex === 0)
-                        {
-                            ctx.moveTo(
-                                point[0],
-                                point[1]
-                            );
-                        }
-                        else
-                        {
-                            ctx.lineTo(
-                                point[0],
-                                point[1]
-                            );
-                        }
-                    }
+            const percentile =
+                state.percentileScores.get(
+                    segment.segmentId
                 );
 
-                ctx.strokeStyle =
-                    colorRamp(
-                        normalizedScore
-                    );
-
-                // Main green-yellow-red line thickness
-                ctx.lineWidth =
-                    18;
-
-                ctx.stroke();
-            }
-            else
+            if (
+                !Number.isFinite(
+                    percentile
+                )
+            )
             {
-                ctx.strokeStyle =
-                    "#6b7280";
-
-                ctx.lineWidth =
-                    14;
-
-                ctx.stroke();
+                return;
             }
+
+            // Dark outer casing
+
+            createSegmentPath(
+                segment
+            );
+
+            ctx.strokeStyle =
+                "rgba(45,45,45,0.85)";
+
+            ctx.lineWidth =
+                DISPLAY.lineCasingWidth;
+
+            ctx.stroke();
+
+            // Colored line
+
+            createSegmentPath(
+                segment
+            );
+
+            ctx.strokeStyle =
+                colorRamp(
+                    percentile
+                );
+
+            ctx.lineWidth =
+                DISPLAY.scoredLineWidth;
+
+            ctx.stroke();
         }
     );
 }
@@ -883,20 +1311,9 @@ Promise.all([
 
         prepareFieldScales();
 
-        buildControls();
+        buildBasemapShiftControls();
 
-        if (state.indices.length > 0)
-        {
-            statusEl.textContent =
-                `${state.segments.length} segments and `
-                + `${state.indices.length} indexes loaded.`;
-        }
-        else
-        {
-            statusEl.textContent =
-                `${state.segments.length} segments loaded. `
-                + "Index data is unavailable, so the lines are gray.";
-        }
+        buildControls();
 
         recalculateScores();
 
@@ -920,7 +1337,7 @@ Promise.all([
 );
 
 // =====================================================
-// RESET BUTTON
+// RESET WEIGHTS
 // =====================================================
 
 resetButton.addEventListener(
@@ -940,5 +1357,4 @@ window.addEventListener(
     resizeCanvas
 );
 
-// Initial canvas sizing
 resizeCanvas();
