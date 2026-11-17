@@ -1,1227 +1,1177 @@
 // =====================================================
 // US 83 NEED INDEX EXPLORER
-// VERSION 5.1
+// VERSION 5.0
 // =====================================================
 
-console.log(
-    "US 83 Need Index Explorer version 5.1"
-);
+console.log("US 83 Need Index Explorer version 5.0");
+
 
 // =====================================================
-// MAP EXTENT
+// MAP EXTENT AND BASEMAP
 // =====================================================
 
 const EXT = {
-    west: -103.356215,
-    east: -96.940124,
-    south: 25.684963,
-    north: 36.796656
+  west: -103.356215,
+  east: -96.940124,
+  south: 25.684963,
+  north: 36.796656
 };
 
-// Raw GitHub URL for the basemap image.
 const BASEMAP =
-    "https://raw.githubusercontent.com/JSMITHHDR/US-83/5165469a29e097b35ddc90d6901b971ff3d13df0/State%20Narrow.png";
+  "https://raw.githubusercontent.com/JSMITHHDR/US-83/5165469a29e097b35ddc90d6901b971ff3d13df0/State%20Narrow.png";
+
 
 // =====================================================
-// FIXED DISPLAY SETTINGS
+// DISPLAY SETTINGS
 // =====================================================
 
 const DISPLAY = {
-    // Horizontal basemap adjustment.
-    basemapShiftX: 0,
+  // Positive X moves the basemap right.
+  basemapShiftX: 0,
 
-    // Negative values move the basemap upward.
-    basemapShiftY: -7,
+  // Negative Y moves the basemap up.
+  basemapShiftY: -7,
 
-    // Fixed line thickness.
-    lineWidth: 8
+  // Colored roadway line width.
+  lineWidth: 8
 };
 
+
 // =====================================================
-// FIXED COLOR RANGES
+// FOUR FIXED COLOR BUCKETS
 // =====================================================
 
-/*
-The colors represent fixed combined Need Index ranges.
-
-These ranges do not change when the sliders move:
-
-0.00 through 0.25 = Green
-Greater than 0.25 through 0.50 = Yellow
-Greater than 0.50 through 0.75 = Orange
-Greater than 0.75 = Red
-*/
-
-const COLOR_CLASSES = [
-    {
-        minimum: 0.00,
-        maximum: 0.25,
-        label: "0.00 - 0.25",
-        color: "#38A800"
-    },
-    {
-        minimum: 0.25,
-        maximum: 0.50,
-        label: ">0.25 - 0.50",
-        color: "#FFFF00"
-    },
-    {
-        minimum: 0.50,
-        maximum: 0.75,
-        label: ">0.50 - 0.75",
-        color: "#E69800"
-    },
-    {
-        minimum: 0.75,
-        maximum: Infinity,
-        label: ">0.75",
-        color: "#FF0000"
-    }
+const COLOR_BUCKETS = [
+  {
+    min: 0.00,
+    max: 0.25,
+    color: "#38A800",
+    label: "Low"
+  },
+  {
+    min: 0.25,
+    max: 0.50,
+    color: "#FFFF00",
+    label: "Moderate"
+  },
+  {
+    min: 0.50,
+    max: 0.75,
+    color: "#E69800",
+    label: "High"
+  },
+  {
+    min: 0.75,
+    max: Infinity,
+    color: "#FF0000",
+    label: "Very High"
+  }
 ];
+
 
 // =====================================================
 // APPLICATION STATE
 // =====================================================
 
 const state = {
-    segments: [],
-    indices: [],
+  segments: [],
+  indices: [],
 
-    // Final combined Need Index by Segment ID.
-    scores: new Map(),
+  // Combined Need Index by Segment ID.
+  scores: new Map(),
 
-    // Fixed color-class assignment by Segment ID.
-    colorClasses: new Map(),
+  // Four-bucket color assignment by Segment ID.
+  colorBuckets: new Map(),
 
-    // Main index-level slider weights.
-    indexW: {},
+  // Index-level slider weights.
+  indexW: {},
 
-    // Individual field slider weights.
-    fieldW: {}
+  // Field-level slider weights.
+  fieldW: {},
+
+  // Controls whether the Future Volume Factor is applied.
+  useFutureVolumeFactor: true
 };
+
 
 // =====================================================
 // DOM REFERENCES
 // =====================================================
 
-const canvas =
-    document.getElementById(
-        "map"
-    );
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
 
-const ctx =
-    canvas.getContext(
-        "2d"
-    );
+const statusEl = document.getElementById("status");
+const indexWeightsDiv = document.getElementById("indexWeights");
+const fieldWeightsDiv = document.getElementById("fieldWeights");
 
-const statusEl =
-    document.getElementById(
-        "status"
-    );
-
-const indexWeightsDiv =
-    document.getElementById(
-        "indexWeights"
-    );
-
-const fieldWeightsDiv =
-    document.getElementById(
-        "fieldWeights"
-    );
-
-const resetButton =
-    document.getElementById(
-        "reset"
-    );
 
 // =====================================================
-// BASEMAP
+// BASEMAP IMAGE
 // =====================================================
 
-const basemap =
-    new Image();
+const basemap = new Image();
 
-basemap.crossOrigin =
-    "anonymous";
+basemap.crossOrigin = "anonymous";
+basemap.src = BASEMAP;
 
-basemap.src =
-    BASEMAP;
-
-basemap.onload =
-    draw;
-
-basemap.onerror = function ()
-{
-    statusEl.textContent +=
-        " Basemap could not load. Verify that the GitHub image is publicly accessible.";
-
-    draw();
+basemap.onload = function () {
+  draw();
 };
 
+basemap.onerror = function () {
+  if (statusEl) {
+    statusEl.textContent =
+      "Basemap could not load. Verify that the raw GitHub image is available.";
+  }
+
+  draw();
+};
+
+
 // =====================================================
-// ASPECT-PRESERVING MAP FRAME
+// GENERAL HELPERS
 // =====================================================
 
-function mapFrame()
-{
-    const canvasWidth =
-        canvas.clientWidth;
+function safeNumber(value, fallback = null) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    String(value).trim().toLowerCase() === "n/a"
+  ) {
+    return fallback;
+  }
 
-    const canvasHeight =
-        canvas.clientHeight;
+  const number = Number(value);
 
-    const extentWidth =
-        EXT.east
-        - EXT.west;
-
-    const extentHeight =
-        EXT.north
-        - EXT.south;
-
-    /*
-    Use one common scale for both dimensions.
-
-    This keeps the basemap and linework from being
-    independently stretched.
-    */
-
-    const scale =
-        Math.min(
-            canvasWidth / extentWidth,
-            canvasHeight / extentHeight
-        );
-
-    const drawWidth =
-        extentWidth
-        * scale;
-
-    const drawHeight =
-        extentHeight
-        * scale;
-
-    return {
-        x:
-            (
-                canvasWidth
-                - drawWidth
-            )
-            / 2,
-
-        y:
-            (
-                canvasHeight
-                - drawHeight
-            )
-            / 2,
-
-        width:
-            drawWidth,
-
-        height:
-            drawHeight,
-
-        scale:
-            scale
-    };
+  return Number.isFinite(number) ? number : fallback;
 }
 
-// =====================================================
-// PROJECT LONGITUDE AND LATITUDE
-// =====================================================
 
-function project(
-    longitude,
-    latitude
-)
-{
-    const frame =
-        mapFrame();
-
-    const x =
-        frame.x
-        +
-        (
-            longitude
-            - EXT.west
-        )
-        * frame.scale;
-
-    const y =
-        frame.y
-        +
-        (
-            EXT.north
-            - latitude
-        )
-        * frame.scale;
-
-    return [
-        x,
-        y
-    ];
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-// =====================================================
-// TOTAL ACTIVE INDEX WEIGHT
-// =====================================================
 
-function activeIndexWeightTotal()
-{
-    return state.indices.reduce(
-        function (
-            total,
-            index
-        )
-        {
-            const weight =
-                Number(
-                    state.indexW[
-                        index.id
-                    ]
-                    ?? 0
-                );
-
-            return total
-                + Math.max(
-                    0,
-                    weight
-                );
-        },
-        0
-    );
+function displayName(value) {
+  return String(value)
+    .replaceAll("_", " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
+
+function getSegmentId(item) {
+  return String(
+    item.segmentId ??
+    item.segmentID ??
+    item.SegmentID ??
+    item["Segment ID"] ??
+    item.id ??
+    ""
+  );
+}
+
+
 // =====================================================
-// SAFE NUMERIC VALUE
+// CANVAS SIZE
 // =====================================================
 
-/*
-This reproduces the Excel expression:
+function resizeCanvas() {
+  if (!canvas) {
+    return;
+  }
 
-IF(cell="",0,cell)
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
 
-Blank, missing, and nonnumeric values become zero.
-*/
+  const width = Math.max(1, Math.round(rect.width * ratio));
+  const height = Math.max(1, Math.round(rect.height * ratio));
 
-function safeNumber(
-    value
-)
-{
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+  draw();
+}
+
+
+// =====================================================
+// MAP PROJECTION
+// =====================================================
+
+function project(lon, lat) {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+
+  const x =
+    ((lon - EXT.west) / (EXT.east - EXT.west)) *
+    width;
+
+  const y =
+    ((EXT.north - lat) / (EXT.north - EXT.south)) *
+    height;
+
+  return [x, y];
+}
+
+
+// =====================================================
+// FUTURE VOLUME FACTOR
+// =====================================================
+
+function getFutureVolumeFactor(row) {
+  const possibleProperties = [
+    "futureVolumeFactor",
+    "FutureVolumeFactor",
+    "future_volume_factor",
+    "Future Volume Factor",
+    "FUTURE VOLUME FACTOR",
+    "futureFactor",
+    "FutureFactor"
+  ];
+
+  for (const property of possibleProperties) {
     if (
-        value === null
-        ||
-        value === undefined
-        ||
-        value === ""
-    )
-    {
-        return 0;
+      Object.prototype.hasOwnProperty.call(row, property)
+    ) {
+      const factor = safeNumber(row[property], null);
+
+      if (factor !== null) {
+        return factor;
+      }
     }
+  }
 
-    const numericValue =
-        Number(value);
-
-    return Number.isFinite(
-        numericValue
-    )
-        ? numericValue
-        : 0;
-}
-
-// =====================================================
-// RAW SCORE FOR ONE SEGMENT AND ONE INDEX
-// =====================================================
-
-/*
-This reproduces:
-
-(
-    Field1 * Weight1
-    + Field2 * Weight2
-    + ...
-)
-* FutureVolumeFactor
-
-The weighted fields are summed directly.
-
-The script does not divide by the sum of the field weights,
-and it does not normalize the individual fields.
-*/
-
-function calculateRawIndexScore(
-    row,
-    index
-)
-{
-    let weightedFieldTotal = 0;
-
-    index.fields.forEach(
-        function (field)
-        {
-            const fieldValue =
-                safeNumber(
-                    row.values[
-                        field
-                    ]
-                );
-
-            const fieldWeight =
-                safeNumber(
-                    state.fieldW[
-                        index.id
-                    ]?.[field]
-                    ?? 0
-                );
-
-            weightedFieldTotal +=
-                fieldValue
-                * fieldWeight;
-        }
-    );
-
-    const futureVolumeFactor =
-        safeNumber(
-            row.futureVolumeFactor
-        );
-
-    return weightedFieldTotal
-        * futureVolumeFactor;
-}
-
-// =====================================================
-// NORMALIZE ONE INDEX AGAINST ITS PEAK
-// =====================================================
-
-/*
-This reproduces the spreadsheet logic:
-
-peak = MAX(scores)
-
-normalized score =
-    IF(
-        peak = 0,
-        0,
-        segment raw score / peak
-    )
-
-Each index is normalized independently.
-*/
-
-function calculateNormalizedIndexScores(
-    index
-)
-{
-    const rawScores =
-        new Map();
-
-    let peakScore = 0;
-
-    // First pass: calculate raw scores and find the peak.
-
-    state.segments.forEach(
-        function (segment)
-        {
-            const row =
-                index.rows[
-                    segment.segmentId
-                ];
-
-            const rawScore =
-                row
-                    ? calculateRawIndexScore(
-                        row,
-                        index
-                    )
-                    : 0;
-
-            rawScores.set(
-                segment.segmentId,
-                rawScore
-            );
-
-            peakScore =
-                Math.max(
-                    peakScore,
-                    rawScore
-                );
-        }
-    );
-
-    const normalizedScores =
-        new Map();
-
-    // Second pass: divide each raw score by the peak.
-
-    state.segments.forEach(
-        function (segment)
-        {
-            const rawScore =
-                rawScores.get(
-                    segment.segmentId
-                )
-                ?? 0;
-
-            const normalizedScore =
-                peakScore === 0
-                    ? 0
-                    : rawScore
-                        / peakScore;
-
-            normalizedScores.set(
-                segment.segmentId,
-                normalizedScore
-            );
-        }
-    );
-
-    return {
-        peak:
-            peakScore,
-
-        scores:
-            normalizedScores
-    };
-}
-
-// =====================================================
-// GET FIXED COLOR CLASS
-// =====================================================
-
-function getFixedColorClass(
-    score
-)
-{
-    /*
-    Explicit boundary handling:
-
-    0.25 stays green.
-    0.50 stays yellow.
-    0.75 stays orange.
-    Values above 0.75 are red.
-    */
-
-    if (score <= 0.25)
-    {
-        return 0;
-    }
-
-    if (score <= 0.50)
-    {
-        return 1;
-    }
-
-    if (score <= 0.75)
-    {
-        return 2;
-    }
-
-    return 3;
-}
-
-function getFixedColor(
-    score
-)
-{
-    const classNumber =
-        getFixedColorClass(
-            score
-        );
-
-    return COLOR_CLASSES[
-        classNumber
-    ].color;
-}
-
-// =====================================================
-// ASSIGN FIXED COLOR CLASSES
-// =====================================================
-
-function assignFixedColorClasses()
-{
-    state.colorClasses.clear();
-
-    state.scores.forEach(
-        function (
-            score,
-            segmentId
+  if (row.values && typeof row.values === "object") {
+    for (const property of possibleProperties) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          row.values,
+          property
         )
-        {
-            if (
-                !Number.isFinite(
-                    score
-                )
-            )
-            {
-                return;
-            }
+      ) {
+        const factor = safeNumber(
+          row.values[property],
+          null
+        );
 
-            const classNumber =
-                getFixedColorClass(
-                    score
-                );
-
-            state.colorClasses.set(
-                segmentId,
-                classNumber
-            );
+        if (factor !== null) {
+          return factor;
         }
-    );
+      }
+    }
+  }
+
+  // A missing factor should not erase the index score.
+  return 1;
 }
 
+
 // =====================================================
-// RECALCULATE ALL NEED INDEX SCORES
+// NORMALIZE FIELD VALUES
 // =====================================================
 
-function recalculateScores()
-{
-    state.scores.clear();
+function normalizeFieldValue(rawValue, field) {
+  const value = safeNumber(rawValue, null);
 
-    state.colorClasses.clear();
+  if (value === null) {
+    return null;
+  }
 
-    /*
-    If every main index slider is zero, stop immediately.
+  /*
+    The index JSON may include a maximum value for fields
+    whose original values exceed the normal 0-to-1 scale.
+  */
 
-    No lines are created or assigned a default green color.
-    */
+  if (
+    field &&
+    typeof field === "object"
+  ) {
+    const maximum = safeNumber(
+      field.max ??
+      field.maximum ??
+      field.observedMax,
+      null
+    );
 
-    if (
-        activeIndexWeightTotal() <= 0
+    if (maximum !== null && maximum > 1) {
+      return value / maximum;
+    }
+  }
+
+  return value;
+}
+
+
+// =====================================================
+// FIELD INFORMATION HELPERS
+// =====================================================
+
+function getFieldId(field) {
+  if (typeof field === "string") {
+    return field;
+  }
+
+  return String(
+    field.id ??
+    field.field ??
+    field.name ??
+    field.key ??
+    ""
+  );
+}
+
+
+function getFieldLabel(field) {
+  if (typeof field === "string") {
+    return displayName(field);
+  }
+
+  return (
+    field.label ??
+    field.displayName ??
+    field.name ??
+    displayName(getFieldId(field))
+  );
+}
+
+
+function getRowFieldValue(row, fieldId) {
+  if (
+    row.values &&
+    Object.prototype.hasOwnProperty.call(
+      row.values,
+      fieldId
     )
-    {
-        statusEl.textContent =
-            "All index weights are zero. No lines are displayed.";
+  ) {
+    return row.values[fieldId];
+  }
 
-        draw();
+  if (
+    Object.prototype.hasOwnProperty.call(
+      row,
+      fieldId
+    )
+  ) {
+    return row[fieldId];
+  }
 
-        return;
+  return null;
+}
+
+
+// =====================================================
+// CALCULATE ONE INDEX
+// =====================================================
+
+function scoreRow(row, index) {
+  let weightedSum = 0;
+  let weightTotal = 0;
+
+  for (const field of index.fields || []) {
+    const fieldId = getFieldId(field);
+    const rawValue = getRowFieldValue(row, fieldId);
+
+    const normalizedValue = normalizeFieldValue(
+      rawValue,
+      field
+    );
+
+    if (normalizedValue === null) {
+      continue;
     }
 
-    /*
-    Calculate each individual index using the supplied
-    spreadsheet methodology.
-    */
+    const fieldWeights =
+      state.fieldW[index.id] || {};
 
-    const normalizedIndexResults =
-        {};
-
-    state.indices.forEach(
-        function (index)
-        {
-            normalizedIndexResults[
-                index.id
-            ] =
-                calculateNormalizedIndexScores(
-                    index
-                );
-        }
+    const weight = Math.max(
+      0,
+      safeNumber(fieldWeights[fieldId], 1)
     );
 
-    /*
-    Combine the normalized indexes using the main
-    index-level slider weights.
-    */
+    if (weight === 0) {
+      continue;
+    }
 
-    state.segments.forEach(
-        function (segment)
-        {
-            let combinedWeightedTotal = 0;
-            let combinedWeightTotal = 0;
+    weightedSum += normalizedValue * weight;
+    weightTotal += weight;
+  }
 
-            state.indices.forEach(
-                function (index)
-                {
-                    const indexWeight =
-                        safeNumber(
-                            state.indexW[
-                                index.id
-                            ]
-                            ?? 0
-                        );
+  if (weightTotal <= 0) {
+    return null;
+  }
 
-                    if (indexWeight <= 0)
-                    {
-                        return;
-                    }
+  const baseIndexScore = weightedSum / weightTotal;
 
-                    const normalizedScore =
-                        normalizedIndexResults[
-                            index.id
-                        ].scores.get(
-                            segment.segmentId
-                        )
-                        ?? 0;
+  if (!state.useFutureVolumeFactor) {
+    return baseIndexScore;
+  }
 
-                    combinedWeightedTotal +=
-                        normalizedScore
-                        * indexWeight;
+  const futureVolumeFactor =
+    getFutureVolumeFactor(row);
 
-                    combinedWeightTotal +=
-                        indexWeight;
-                }
-            );
+  return baseIndexScore * futureVolumeFactor;
+}
 
-            if (combinedWeightTotal <= 0)
-            {
-                return;
-            }
 
-            /*
-            Divide by total active index weight so only the
-            relative weighting of the indexes matters.
-            */
+// =====================================================
+// FIND AN INDEX ROW FOR A SEGMENT
+// =====================================================
 
-            const combinedScore =
-                combinedWeightedTotal
-                / combinedWeightTotal;
+function findIndexRow(index, segmentId) {
+  const rows =
+    index.rows ??
+    index.data ??
+    index.records ??
+    [];
 
-            state.scores.set(
-                segment.segmentId,
-                combinedScore
-            );
-        }
+  return rows.find(function (row) {
+    return getSegmentId(row) === segmentId;
+  });
+}
+
+
+// =====================================================
+// ACTIVE INDEX WEIGHT TOTAL
+// =====================================================
+
+function activeIndexWeightTotal() {
+  return state.indices.reduce(function (total, index) {
+    const weight = Math.max(
+      0,
+      safeNumber(state.indexW[index.id], 0)
     );
 
-    assignFixedColorClasses();
+    return total + weight;
+  }, 0);
+}
 
-    updateStatusMessage();
 
+// =====================================================
+// RECALCULATE COMBINED NEED INDEX
+// =====================================================
+
+function recalculate() {
+  state.scores.clear();
+  state.colorBuckets.clear();
+
+  const totalActiveWeight = activeIndexWeightTotal();
+
+  /*
+    If all five index sliders are zero, clear the lines
+    instead of displaying a default green line.
+  */
+
+  if (totalActiveWeight <= 0) {
     draw();
-}
 
-// =====================================================
-// UPDATE STATUS MESSAGE
-// =====================================================
+    if (statusEl) {
+      statusEl.textContent =
+        "All index weights are zero. No scored segments are displayed.";
+    }
 
-function updateStatusMessage()
-{
-    const classCounts =
-        [
-            0,
-            0,
-            0,
-            0
-        ];
+    return;
+  }
 
-    state.colorClasses.forEach(
-        function (classNumber)
-        {
-            classCounts[
-                classNumber
-            ] += 1;
-        }
+  for (const segment of state.segments) {
+    const segmentId = getSegmentId(segment);
+
+    let weightedScoreTotal = 0;
+    let appliedWeightTotal = 0;
+
+    for (const index of state.indices) {
+      const indexWeight = Math.max(
+        0,
+        safeNumber(state.indexW[index.id], 0)
+      );
+
+      if (indexWeight === 0) {
+        continue;
+      }
+
+      const row = findIndexRow(index, segmentId);
+
+      if (!row) {
+        continue;
+      }
+
+      const indexScore = scoreRow(row, index);
+
+      if (
+        indexScore === null ||
+        !Number.isFinite(indexScore)
+      ) {
+        continue;
+      }
+
+      weightedScoreTotal +=
+        indexScore * indexWeight;
+
+      appliedWeightTotal += indexWeight;
+    }
+
+    if (appliedWeightTotal <= 0) {
+      continue;
+    }
+
+    const combinedScore =
+      weightedScoreTotal / appliedWeightTotal;
+
+    state.scores.set(
+      segmentId,
+      combinedScore
     );
+
+    state.colorBuckets.set(
+      segmentId,
+      getColorBucket(combinedScore)
+    );
+  }
+
+  draw();
+
+  if (statusEl) {
+    const factorStatus =
+      state.useFutureVolumeFactor
+        ? "Future Volume Factor on"
+        : "Future Volume Factor off";
 
     statusEl.textContent =
-        `${state.scores.size} scored segments: `
-        + `${classCounts[0]} green, `
-        + `${classCounts[1]} yellow, `
-        + `${classCounts[2]} orange, `
-        + `${classCounts[3]} red.`;
+      `${state.scores.size} segments displayed. ${factorStatus}.`;
+  }
 }
 
-// =====================================================
-// CREATE WEIGHT SLIDER
-// =====================================================
-
-function createWeightSlider(
-    labelText,
-    changeFunction
-)
-{
-    const container =
-        document.createElement(
-            "div"
-        );
-
-    container.className =
-        "slider";
-
-    const label =
-        document.createElement(
-            "label"
-        );
-
-    const labelName =
-        document.createElement(
-            "span"
-        );
-
-    labelName.textContent =
-        labelText;
-
-    const output =
-        document.createElement(
-            "output"
-        );
-
-    output.textContent =
-        "1.0x";
-
-    label.appendChild(
-        labelName
-    );
-
-    label.appendChild(
-        output
-    );
-
-    const input =
-        document.createElement(
-            "input"
-        );
-
-    input.type =
-        "range";
-
-    input.min =
-        "0";
-
-    input.max =
-        "5";
-
-    input.step =
-        "0.1";
-
-    input.value =
-        "1";
-
-    input.addEventListener(
-        "input",
-        function ()
-        {
-            const value =
-                Number(
-                    input.value
-                );
-
-            output.textContent =
-                value.toFixed(1)
-                + "x";
-
-            changeFunction(
-                value
-            );
-        }
-    );
-
-    container.appendChild(
-        label
-    );
-
-    container.appendChild(
-        input
-    );
-
-    return container;
-}
 
 // =====================================================
-// BUILD INDEX AND FIELD WEIGHT CONTROLS
+// FIXED COLOR BUCKET ASSIGNMENT
 // =====================================================
 
-function buildWeightControls()
-{
-    indexWeightsDiv.innerHTML =
-        "";
+function getColorBucket(score) {
+  const value = safeNumber(score, 0);
 
-    fieldWeightsDiv.innerHTML =
-        "";
+  for (let index = 0; index < COLOR_BUCKETS.length; index += 1) {
+    const bucket = COLOR_BUCKETS[index];
 
-    state.indices.forEach(
-        function (index)
-        {
-            // Equal default index weight.
+    const isLast =
+      index === COLOR_BUCKETS.length - 1;
 
-            state.indexW[
-                index.id
-            ] =
-                1;
+    const insideBucket =
+      value >= bucket.min &&
+      (isLast
+        ? value <= bucket.max
+        : value < bucket.max);
 
-            state.fieldW[
-                index.id
-            ] =
-                {};
-
-            const indexSlider =
-                createWeightSlider(
-                    index.name,
-                    function (value)
-                    {
-                        state.indexW[
-                            index.id
-                        ] =
-                            value;
-
-                        recalculateScores();
-                    }
-                );
-
-            indexWeightsDiv.appendChild(
-                indexSlider
-            );
-
-            // Expandable field controls.
-
-            const details =
-                document.createElement(
-                    "details"
-                );
-
-            const summary =
-                document.createElement(
-                    "summary"
-                );
-
-            summary.textContent =
-                index.name;
-
-            details.appendChild(
-                summary
-            );
-
-            index.fields.forEach(
-                function (field)
-                {
-                    // Equal default field weight.
-
-                    state.fieldW[
-                        index.id
-                    ][field] =
-                        1;
-
-                    const fieldSlider =
-                        createWeightSlider(
-                            field,
-                            function (value)
-                            {
-                                state.fieldW[
-                                    index.id
-                                ][field] =
-                                    value;
-
-                                recalculateScores();
-                            }
-                        );
-
-                    details.appendChild(
-                        fieldSlider
-                    );
-                }
-            );
-
-            fieldWeightsDiv.appendChild(
-                details
-            );
-        }
-    );
-}
-
-// =====================================================
-// RESIZE CANVAS
-// =====================================================
-
-function resizeCanvas()
-{
-    const pixelRatio =
-        window.devicePixelRatio
-        || 1;
-
-    const displayWidth =
-        canvas.clientWidth;
-
-    const displayHeight =
-        canvas.clientHeight;
-
-    const requiredWidth =
-        Math.round(
-            displayWidth
-            * pixelRatio
-        );
-
-    const requiredHeight =
-        Math.round(
-            displayHeight
-            * pixelRatio
-        );
-
-    if (
-        canvas.width !== requiredWidth
-        ||
-        canvas.height !== requiredHeight
-    )
-    {
-        canvas.width =
-            requiredWidth;
-
-        canvas.height =
-            requiredHeight;
+    if (insideBucket) {
+      return bucket;
     }
+  }
 
-    ctx.setTransform(
-        pixelRatio,
-        0,
-        0,
-        pixelRatio,
-        0,
-        0
-    );
-
-    draw();
+  return COLOR_BUCKETS[COLOR_BUCKETS.length - 1];
 }
 
+
 // =====================================================
-// CREATE SEGMENT PATH
+// SEGMENT VERTEX HELPERS
 // =====================================================
 
-function createSegmentPath(
-    segment
-)
-{
-    ctx.beginPath();
-
-    segment.coordinates.forEach(
-        function (
-            coordinate,
-            coordinateIndex
-        )
-        {
-            const point =
-                project(
-                    coordinate[0],
-                    coordinate[1]
-                );
-
-            if (coordinateIndex === 0)
-            {
-                ctx.moveTo(
-                    point[0],
-                    point[1]
-                );
-            }
-            else
-            {
-                ctx.lineTo(
-                    point[0],
-                    point[1]
-                );
-            }
-        }
-    );
+function getVertices(segment) {
+  return (
+    segment.vertices ??
+    segment.points ??
+    segment.coordinates ??
+    segment.path ??
+    []
+  );
 }
+
+
+function getLongitude(vertex) {
+  if (Array.isArray(vertex)) {
+    return safeNumber(vertex[0], null);
+  }
+
+  return safeNumber(
+    vertex.lon ??
+    vertex.lng ??
+    vertex.longitude ??
+    vertex.Longitude ??
+    vertex.LONGITUDE ??
+    vertex.x,
+    null
+  );
+}
+
+
+function getLatitude(vertex) {
+  if (Array.isArray(vertex)) {
+    return safeNumber(vertex[1], null);
+  }
+
+  return safeNumber(
+    vertex.lat ??
+    vertex.latitude ??
+    vertex.Latitude ??
+    vertex.LATITUDE ??
+    vertex.y,
+    null
+  );
+}
+
 
 // =====================================================
 // DRAW MAP
 // =====================================================
 
-function draw()
-{
-    const width =
-        canvas.clientWidth;
+function draw() {
+  if (!canvas || !ctx) {
+    return;
+  }
 
-    const height =
-        canvas.clientHeight;
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
 
-    ctx.clearRect(
-        0,
-        0,
-        width,
-        height
+  ctx.clearRect(0, 0, width, height);
+
+  // Draw the shifted basemap.
+  if (
+    basemap.complete &&
+    basemap.naturalWidth > 0
+  ) {
+    ctx.drawImage(
+      basemap,
+      DISPLAY.basemapShiftX,
+      DISPLAY.basemapShiftY,
+      width,
+      height
     );
+  }
 
-    ctx.fillStyle =
-        "#d7dde4";
+  /*
+    Do not draw any roadway lines when every index
+    weight is set to zero.
+  */
 
-    ctx.fillRect(
-        0,
-        0,
-        width,
-        height
-    );
+  if (activeIndexWeightTotal() <= 0) {
+    return;
+  }
 
-    const frame =
-        mapFrame();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = DISPLAY.lineWidth;
 
-    /*
-    Draw the basemap with the fixed -7 pixel vertical
-    adjustment. Linework remains fixed.
-    */
+  for (const segment of state.segments) {
+    const segmentId = getSegmentId(segment);
+    const bucket = state.colorBuckets.get(segmentId);
 
-    if (
-        basemap.complete
-        &&
-        basemap.naturalWidth > 0
-    )
-    {
-        ctx.drawImage(
-            basemap,
-
-            frame.x
-                + DISPLAY.basemapShiftX,
-
-            frame.y
-                + DISPLAY.basemapShiftY,
-
-            frame.width,
-            frame.height
-        );
+    if (!bucket) {
+      continue;
     }
 
-    /*
-    Do not draw any roadway lines when all main index
-    sliders are zero.
-    */
+    const vertices = getVertices(segment);
 
-    if (
-        state.indices.length > 0
-        &&
-        activeIndexWeightTotal() <= 0
-    )
-    {
-        return;
+    if (!Array.isArray(vertices) || vertices.length < 2) {
+      continue;
     }
 
-    ctx.lineCap =
-        "round";
+    ctx.beginPath();
 
-    ctx.lineJoin =
-        "round";
+    let started = false;
 
-    state.segments.forEach(
-        function (segment)
-        {
-            if (
-                !state.scores.has(
-                    segment.segmentId
-                )
-                ||
-                !state.colorClasses.has(
-                    segment.segmentId
-                )
-            )
-            {
-                return;
-            }
+    for (const vertex of vertices) {
+      const lon = getLongitude(vertex);
+      const lat = getLatitude(vertex);
 
-            const score =
-                state.scores.get(
-                    segment.segmentId
-                );
+      if (lon === null || lat === null) {
+        continue;
+      }
 
-            createSegmentPath(
-                segment
-            );
+      const [x, y] = project(lon, lat);
 
-            /*
-            Use one colored stroke only.
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
 
-            No casing or outline is applied.
-            */
+    if (!started) {
+      continue;
+    }
 
-            ctx.strokeStyle =
-                getFixedColor(
-                    score
-                );
-
-            ctx.lineWidth =
-                DISPLAY.lineWidth;
-
-            ctx.stroke();
-        }
-    );
+    // One stroke only. No casing or outline.
+    ctx.strokeStyle = bucket.color;
+    ctx.stroke();
+  }
 }
 
+
 // =====================================================
-// LOAD DATA
+// CREATE A SLIDER
 // =====================================================
 
-Promise.all([
-    fetch(
-        "segments.json"
-    )
-    .then(
-        function (response)
-        {
-            if (!response.ok)
-            {
-                throw new Error(
-                    "Could not load segments.json"
-                );
-            }
+function createSlider(options) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "slider-control";
 
-            return response.json();
+  const header = document.createElement("div");
+  header.className = "slider-header";
+
+  const label = document.createElement("label");
+  label.htmlFor = options.id;
+  label.textContent = options.label;
+
+  const output = document.createElement("output");
+  output.htmlFor = options.id;
+  output.textContent =
+    Number(options.value).toFixed(1);
+
+  const input = document.createElement("input");
+
+  input.type = "range";
+  input.id = options.id;
+  input.min = String(options.min ?? 0);
+  input.max = String(options.max ?? 2);
+  input.step = String(options.step ?? 0.1);
+  input.value = String(options.value);
+
+  header.appendChild(label);
+  header.appendChild(output);
+
+  wrapper.appendChild(header);
+  wrapper.appendChild(input);
+
+  input.addEventListener("input", function () {
+    const value = safeNumber(input.value, 0);
+
+    output.textContent = value.toFixed(1);
+
+    options.onInput(value);
+  });
+
+  return wrapper;
+}
+
+
+// =====================================================
+// BUILD INDEX-WEIGHT SLIDERS
+// =====================================================
+
+function buildIndexControls() {
+  if (!indexWeightsDiv) {
+    return;
+  }
+
+  indexWeightsDiv.innerHTML = "";
+
+  for (const index of state.indices) {
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        state.indexW,
+        index.id
+      )
+    ) {
+      state.indexW[index.id] = 1;
+    }
+
+    const control = createSlider({
+      id: `index-weight-${index.id}`,
+      label:
+        index.label ??
+        index.name ??
+        displayName(index.id),
+      value: state.indexW[index.id],
+      min: 0,
+      max: 2,
+      step: 0.1,
+      onInput: function (value) {
+        state.indexW[index.id] = value;
+        recalculate();
+      }
+    });
+
+    indexWeightsDiv.appendChild(control);
+  }
+}
+
+
+// =====================================================
+// BUILD FIELD-WEIGHT SLIDERS
+// =====================================================
+
+function buildFieldControls() {
+  if (!fieldWeightsDiv) {
+    return;
+  }
+
+  fieldWeightsDiv.innerHTML = "";
+
+  for (const index of state.indices) {
+    const section = document.createElement("section");
+    section.className = "field-weight-group";
+
+    const heading = document.createElement("h3");
+
+    heading.textContent =
+      index.label ??
+      index.name ??
+      displayName(index.id);
+
+    section.appendChild(heading);
+
+    if (!state.fieldW[index.id]) {
+      state.fieldW[index.id] = {};
+    }
+
+    for (const field of index.fields || []) {
+      const fieldId = getFieldId(field);
+
+      if (
+        !Object.prototype.hasOwnProperty.call(
+          state.fieldW[index.id],
+          fieldId
+        )
+      ) {
+        state.fieldW[index.id][fieldId] = 1;
+      }
+
+      const control = createSlider({
+        id: `field-weight-${index.id}-${fieldId}`,
+        label: getFieldLabel(field),
+        value: state.fieldW[index.id][fieldId],
+        min: 0,
+        max: 2,
+        step: 0.1,
+        onInput: function (value) {
+          state.fieldW[index.id][fieldId] = value;
+          recalculate();
         }
-    ),
+      });
 
-    fetch(
-        "indices.json"
-    )
-    .then(
-        function (response)
-        {
-            if (!response.ok)
-            {
-                throw new Error(
-                    "Could not load indices.json"
-                );
-            }
-
-            return response.json();
-        }
-    )
-])
-
-.then(
-    function (results)
-    {
-        state.segments =
-            results[0];
-
-        state.indices =
-            results[1];
-
-        buildWeightControls();
-
-        recalculateScores();
-
-        resizeCanvas();
+      section.appendChild(control);
     }
-)
 
-.catch(
-    function (error)
-    {
-        console.error(
-            "DATA LOAD ERROR:",
-            error
-        );
+    fieldWeightsDiv.appendChild(section);
+  }
+}
 
-        statusEl.textContent =
-            "The map data could not be loaded. "
-            + "Confirm that segments.json and indices.json "
-            + "are in the same GitHub folder as app.js.";
+
+// =====================================================
+// FUTURE VOLUME FACTOR TOGGLE
+// =====================================================
+
+function setupFutureVolumeToggle() {
+  let wrapper =
+    document.getElementById("futureVolumeControl");
+
+  /*
+    Create the control automatically if it has not
+    already been added to index.html.
+  */
+
+  if (!wrapper) {
+    wrapper = document.createElement("div");
+    wrapper.id = "futureVolumeControl";
+    wrapper.className =
+      "control-row future-volume-control";
+
+    wrapper.innerHTML = `
+      <label for="futureVolumeToggle">
+        <input
+          type="checkbox"
+          id="futureVolumeToggle"
+          checked
+        >
+        Apply Future Volume Factor
+      </label>
+      <span id="futureVolumeStatus">On</span>
+    `;
+
+    const preferredParent =
+      indexWeightsDiv?.parentElement ??
+      document.querySelector(".controls") ??
+      document.querySelector("aside") ??
+      document.body;
+
+    if (indexWeightsDiv) {
+      preferredParent.insertBefore(
+        wrapper,
+        indexWeightsDiv
+      );
+    } else {
+      preferredParent.appendChild(wrapper);
     }
-);
+  }
 
-// =====================================================
-// RESET WEIGHTS
-// =====================================================
+  const toggle =
+    document.getElementById("futureVolumeToggle");
 
-resetButton.addEventListener(
-    "click",
-    function ()
-    {
-        window.location.reload();
+  const status =
+    document.getElementById("futureVolumeStatus");
+
+  if (!toggle) {
+    return;
+  }
+
+  toggle.checked =
+    state.useFutureVolumeFactor;
+
+  if (status) {
+    status.textContent =
+      toggle.checked ? "On" : "Off";
+  }
+
+  toggle.addEventListener("change", function () {
+    state.useFutureVolumeFactor =
+      toggle.checked;
+
+    if (status) {
+      status.textContent =
+        toggle.checked ? "On" : "Off";
     }
-);
+
+    recalculate();
+  });
+}
+
 
 // =====================================================
-// WINDOW RESIZE
+// RESET EQUAL WEIGHTS
 // =====================================================
 
-window.addEventListener(
-    "resize",
-    resizeCanvas
-);
+function setupResetButton() {
+  const resetButton =
+    document.getElementById("resetWeights") ??
+    document.getElementById("resetEqualWeights");
 
-// Initial canvas sizing.
+  if (!resetButton) {
+    return;
+  }
+
+  resetButton.addEventListener("click", function () {
+    for (const index of state.indices) {
+      state.indexW[index.id] = 1;
+
+      if (!state.fieldW[index.id]) {
+        state.fieldW[index.id] = {};
+      }
+
+      for (const field of index.fields || []) {
+        state.fieldW[index.id][getFieldId(field)] = 1;
+      }
+    }
+
+    buildIndexControls();
+    buildFieldControls();
+    recalculate();
+  });
+}
+
+
+// =====================================================
+// OPTIONAL BASEMAP CONTROLS
+// =====================================================
+
+function setupBasemapControls() {
+  const shiftX =
+    document.getElementById("basemapShiftX");
+
+  const shiftY =
+    document.getElementById("basemapShiftY");
+
+  const shiftXValue =
+    document.getElementById("basemapShiftXValue");
+
+  const shiftYValue =
+    document.getElementById("basemapShiftYValue");
+
+  if (shiftX) {
+    shiftX.value =
+      String(DISPLAY.basemapShiftX);
+
+    if (shiftXValue) {
+      shiftXValue.textContent =
+        `${DISPLAY.basemapShiftX}px`;
+    }
+
+    shiftX.addEventListener("input", function () {
+      DISPLAY.basemapShiftX =
+        safeNumber(shiftX.value, 0);
+
+      if (shiftXValue) {
+        shiftXValue.textContent =
+          `${DISPLAY.basemapShiftX}px`;
+      }
+
+      draw();
+    });
+  }
+
+  if (shiftY) {
+    shiftY.value =
+      String(DISPLAY.basemapShiftY);
+
+    if (shiftYValue) {
+      shiftYValue.textContent =
+        `${DISPLAY.basemapShiftY}px`;
+    }
+
+    shiftY.addEventListener("input", function () {
+      DISPLAY.basemapShiftY =
+        safeNumber(shiftY.value, -7);
+
+      if (shiftYValue) {
+        shiftYValue.textContent =
+          `${DISPLAY.basemapShiftY}px`;
+      }
+
+      draw();
+    });
+  }
+}
+
+
+// =====================================================
+// OPTIONAL LINE-WIDTH CONTROL
+// =====================================================
+
+function setupLineWidthControl() {
+  const lineWidthSlider =
+    document.getElementById("lineWidth");
+
+  const lineWidthValue =
+    document.getElementById("lineWidthValue");
+
+  if (!lineWidthSlider) {
+    return;
+  }
+
+  lineWidthSlider.value =
+    String(DISPLAY.lineWidth);
+
+  if (lineWidthValue) {
+    lineWidthValue.textContent =
+      `${DISPLAY.lineWidth}px`;
+  }
+
+  lineWidthSlider.addEventListener(
+    "input",
+    function () {
+      DISPLAY.lineWidth = Math.max(
+        1,
+        safeNumber(lineWidthSlider.value, 8)
+      );
+
+      if (lineWidthValue) {
+        lineWidthValue.textContent =
+          `${DISPLAY.lineWidth}px`;
+      }
+
+      draw();
+    }
+  );
+}
+
+
+// =====================================================
+// LOAD APPLICATION DATA
+// =====================================================
+
+async function loadData() {
+  if (statusEl) {
+    statusEl.textContent =
+      "Loading roadway segments and index data...";
+  }
+
+  try {
+    const [segmentResponse, indexResponse] =
+      await Promise.all([
+        fetch("segments.json"),
+        fetch("indices.json")
+      ]);
+
+    if (!segmentResponse.ok) {
+      throw new Error(
+        `segments.json returned ${segmentResponse.status}`
+      );
+    }
+
+    if (!indexResponse.ok) {
+      throw new Error(
+        `indices.json returned ${indexResponse.status}`
+      );
+    }
+
+    const segmentData =
+      await segmentResponse.json();
+
+    const indexData =
+      await indexResponse.json();
+
+    state.segments = Array.isArray(segmentData)
+      ? segmentData
+      : segmentData.segments ?? [];
+
+    state.indices = Array.isArray(indexData)
+      ? indexData
+      : indexData.indices ?? [];
+
+    for (const index of state.indices) {
+      if (!index.id) {
+        index.id =
+          index.name ??
+          index.label ??
+          `index-${state.indices.indexOf(index)}`;
+      }
+
+      state.indexW[index.id] = 1;
+      state.fieldW[index.id] = {};
+
+      for (const field of index.fields || []) {
+        state.fieldW[index.id][getFieldId(field)] = 1;
+      }
+    }
+
+    buildIndexControls();
+    buildFieldControls();
+
+    setupFutureVolumeToggle();
+    setupResetButton();
+    setupBasemapControls();
+    setupLineWidthControl();
+
+    recalculate();
+
+    if (statusEl) {
+      statusEl.textContent =
+        `${state.segments.length} roadway segments loaded. Future Volume Factor on.`;
+    }
+  } catch (error) {
+    console.error(error);
+
+    if (statusEl) {
+      statusEl.textContent =
+        `Unable to load the app data: ${error.message}`;
+    }
+  }
+}
+
+
+// =====================================================
+// START APPLICATION
+// =====================================================
+
+window.addEventListener("resize", resizeCanvas);
+
 resizeCanvas();
+loadData();
