@@ -331,3 +331,62 @@ classes calculated using the selected method.
         left: 10px;
     }
 }
+/* =====================================================
+   BASEMAP CALIBRATION
+   ===================================================== */
+
+.basemap-calibration {
+    margin-top: 16px;
+}
+
+.calibration-instructions {
+    margin: 0 0 10px;
+    color: #52606d;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.calibration-slider {
+    margin: 8px 0 11px;
+}
+
+.slider input[type="number"].calibration-number {
+    width: 72px;
+    min-width: 72px;
+    flex-basis: 72px;
+}
+
+.calibration-readout {
+    margin-top: 10px;
+    padding: 7px;
+    border: 1px solid #d8e0ea;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #344054;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 10px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.calibration-buttons {
+    display: flex;
+    gap: 7px;
+    margin-top: 9px;
+}
+
+.calibration-buttons button {
+    flex: 1 1 0;
+    padding: 7px 8px;
+    font-size: 11px;
+}
+
+.secondary-button {
+    border: 1px solid #aab6c4;
+    background: #ffffff;
+    color: #172033;
+}
+
+.secondary-button:hover {
+    background: #e9eef5;
+}
