@@ -31,7 +31,7 @@ const DISPLAY = {
     basemapShiftX: 0,
 
     // Negative values move the basemap upward.
-    basemapShiftY: -10,
+    basemapShiftY: -20,
 
     // Fixed line thickness.
     lineWidth: 8
