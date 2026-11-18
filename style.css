@@ -1,3 +1,7 @@
+/* =====================================================
+   GLOBAL SETTINGS
+   ===================================================== */
+
 * {
     box-sizing: border-box;
 }
@@ -12,6 +16,10 @@ main {
     color: #172033;
 }
 
+/* =====================================================
+   MAIN LAYOUT
+   ===================================================== */
+
 main {
     display: grid;
     grid-template-columns: minmax(280px, 360px) 1fr;
@@ -21,33 +29,42 @@ main {
 aside {
     padding: 18px;
     overflow: auto;
-    background: #fff;
+    background: #ffffff;
     border-right: 1px solid #ccd5e0;
 }
 
+/* =====================================================
+   HEADINGS AND DESCRIPTIVE TEXT
+   ===================================================== */
+
 h1 {
-    font-size: 22px;
     margin: 0 0 6px;
+    font-size: 22px;
 }
 
 .sub {
+    margin: 0 0 12px;
+    color: #52606d;
     font-size: 13px;
     line-height: 1.4;
-    color: #52606d;
-    margin: 0 0 12px;
 }
 
 h2 {
-    font-size: 15px;
     margin: 18px 0 8px;
+    font-size: 15px;
 }
+
+/* =====================================================
+   SLIDER CONTROLS
+   ===================================================== */
 
 .slider {
     margin: 8px 0 12px;
 }
 
 /*
-The label contains the slider name and editable weight box.
+The label contains the slider name and editable
+weight box.
 */
 
 .slider label {
@@ -68,11 +85,12 @@ Only range inputs extend across the available width.
     width: 100%;
     margin: 5px 0 0;
     accent-color: #1565c0;
+    cursor: pointer;
 }
 
-/*
-Editable weight number box.
-*/
+/* =====================================================
+   EDITABLE WEIGHT NUMBER BOX
+   ===================================================== */
 
 .slider input[type="number"].weight-number {
     flex: 0 0 62px;
@@ -81,7 +99,7 @@ Editable weight number box.
     padding: 4px 5px;
     border: 1px solid #aab6c4;
     border-radius: 5px;
-    background: #fff;
+    background: #ffffff;
     color: #172033;
     font-family: inherit;
     font-size: 12px;
@@ -99,36 +117,122 @@ Editable weight number box.
     outline-offset: 1px;
 }
 
+/* =====================================================
+   FUTURE VOLUME FACTOR CONTROL
+   ===================================================== */
+
 /*
 Keep the Future Volume Factor checkbox from inheriting
 the range or number-input dimensions.
 */
 
 .slider input[type="checkbox"] {
-    width: auto;
     flex: 0 0 auto;
+    width: auto;
     margin: 0;
     accent-color: #1565c0;
+    cursor: pointer;
 }
 
+/*
+Add a light container around application options such
+as the Future Volume Factor toggle.
+*/
+
+.option-control {
+    margin: 16px 0 12px;
+    padding: 10px;
+    border: 1px solid #d8e0ea;
+    border-radius: 6px;
+    background: #f4f7fb;
+}
+
+/* =====================================================
+   CLASSIFICATION METHOD CONTROL
+   ===================================================== */
+
+.classification-control {
+    margin: 16px 0 12px;
+    padding: 10px;
+    border: 1px solid #d8e0ea;
+    border-radius: 6px;
+    background: #f4f7fb;
+}
+
+.classification-title {
+    margin-bottom: 8px;
+    color: #172033;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.classification-options {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px;
+}
+
+.classification-options label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 7px;
+    width: 100%;
+    color: #172033;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.classification-options input[type="radio"] {
+    flex: 0 0 auto;
+    width: auto;
+    margin: 0;
+    accent-color: #1565c0;
+    cursor: pointer;
+}
+
+.classification-options label:hover {
+    color: #0f56a6;
+}
+
+/* =====================================================
+   EXPANDABLE FIELD CONTROLS
+   ===================================================== */
+
 details {
-    border-top: 1px solid #e3e8ef;
-    padding-top: 7px;
     margin-top: 7px;
+    padding-top: 7px;
+    border-top: 1px solid #e3e8ef;
 }
 
 summary {
-    cursor: pointer;
-    font-weight: 650;
     font-size: 13px;
+    font-weight: 650;
+    cursor: pointer;
 }
 
+summary:hover {
+    color: #0f56a6;
+}
+
+summary:focus-visible {
+    border-radius: 3px;
+    outline: 2px solid rgba(21, 101, 192, 0.35);
+    outline-offset: 2px;
+}
+
+/* =====================================================
+   BUTTONS
+   ===================================================== */
+
 button {
+    padding: 8px 10px;
     border: 0;
     border-radius: 5px;
-    padding: 8px 10px;
     background: #1565c0;
-    color: #fff;
+    color: #ffffff;
+    font-family: inherit;
     cursor: pointer;
 }
 
@@ -141,6 +245,10 @@ button:focus-visible {
     outline-offset: 2px;
 }
 
+/* =====================================================
+   MAP
+   ===================================================== */
+
 .mapwrap {
     position: relative;
     min-width: 0;
@@ -149,24 +257,33 @@ button:focus-visible {
 }
 
 canvas {
+    display: block;
     width: 100%;
     height: 100%;
-    display: block;
 }
+
+/* =====================================================
+   MAP LEGEND
+   ===================================================== */
 
 .legend {
     position: absolute;
-    left: 18px;
     bottom: 18px;
-    background: #ffffffe6;
+    left: 18px;
     padding: 8px 10px;
     border-radius: 6px;
+    background: rgba(255, 255, 255, 0.90);
     font-size: 11px;
 }
 
+/*
+Four discrete color sections correspond to the four
+classes calculated using the selected method.
+*/
+
 .bar {
-    height: 8px;
     width: 190px;
+    height: 8px;
     margin: 4px 0;
     background: linear-gradient(
         90deg,
@@ -181,13 +298,22 @@ canvas {
     );
 }
 
+/* =====================================================
+   STATUS MESSAGE
+   ===================================================== */
+
 #status {
-    font-size: 12px;
-    padding: 8px;
-    background: #edf4ff;
-    border-radius: 5px;
     margin-bottom: 10px;
+    padding: 8px;
+    border-radius: 5px;
+    background: #edf4ff;
+    font-size: 12px;
+    line-height: 1.4;
 }
+
+/* =====================================================
+   SMALL-SCREEN LAYOUT
+   ===================================================== */
 
 @media (max-width: 720px) {
     main {
@@ -198,5 +324,10 @@ canvas {
     aside {
         border-right: 0;
         border-bottom: 1px solid #ccd5e0;
+    }
+
+    .legend {
+        bottom: 10px;
+        left: 10px;
     }
 }
