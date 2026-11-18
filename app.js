@@ -20,7 +20,7 @@ const EXT = {
 
 // Raw GitHub URL for the basemap image.
 const BASEMAP =
-    "https://github.com/JSMITHHDR/US-83/blob/e9f59451284d48508d45dba50a872dc20fa6272e/State%20Narrow_1.png";
+    "https://github.com/JSMITHHDR/US-83/blob/812ee6094c2af65b66577a96c5ea3b5d0d1d91cd/State%20Narrow.png";
 
 // =====================================================
 // FIXED DISPLAY SETTINGS
