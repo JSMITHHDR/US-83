@@ -12,15 +12,15 @@ console.log(
 // =====================================================
 
 const EXT = {
-    west: -103.356215,
-    east: -96.940124,
-    south: 25.684963,
-    north: 36.796656
+    west: -102.923583,
+    east: -97.065799,
+    south: 25.393838,
+    north: 37.282022
 };
 
 // Raw GitHub URL for the basemap image.
 const BASEMAP =
-    "https://raw.githubusercontent.com/JSMITHHDR/US-83/97370a044e4c2790fa21e932e18768bd5d9cc448/Texas%20with%20Study%20Area%20Narrow.png";
+    "https://raw.githubusercontent.com/JSMITHHDR/US-83/9e27d6862f0ff6a41d1b07dd8c6b9544a0e217e5/Texas%20with%20Study%20Area%20Narrow.png";
 
 // =====================================================
 // FIXED DISPLAY SETTINGS
