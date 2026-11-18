@@ -26,26 +26,6 @@ const BASEMAP =
 const LABELS_OVERLAY =
     "https://raw.githubusercontent.com/JSMITHHDR/US-83/d957daa12aee5b111ba4beebb137cbebac62d6ef/Labels.png";
 
-// =====================================================
-// DISPLAY AND CALIBRATION SETTINGS
-// =====================================================
-
-const DISPLAY = {
-    basemapShiftX: 0,
-    basemapShiftY: 0,
-    basemapScaleX: 1.000,
-    basemapScaleY: 1.000,
-    lineWidth: 8
-};
-
-const BASEMAP_CONTROL_SETTINGS = {
-    shiftMinimum: -250,
-    shiftMaximum: 250,
-    shiftStep: 1,
-    scaleMinimum: 0.500,
-    scaleMaximum: 1.500,
-    scaleStep: 0.001
-};
 
 // =====================================================
 // COLOR AND CLASSIFICATION SETTINGS
