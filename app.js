@@ -12,10 +12,10 @@ console.log(
 // =====================================================
 
 const EXT = {
-    west: -103.356215,
-    east: -96.940124,
-    south: 25.684963,
-    north: 36.796656
+    west: -103.35621513299998,
+    east: -96.94012402599998,
+    south: 25.688973076000025,
+    north: 36.796656057000064
 };
 
 // Raw GitHub URL for the basemap image.
@@ -31,7 +31,7 @@ const DISPLAY = {
     basemapShiftX: 0,
 
     // Negative values move the basemap upward.
-    basemapShiftY: -7,
+    basemapShiftY: 0,
 
     // Fixed line thickness.
     lineWidth: 8
