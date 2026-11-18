@@ -18,25 +18,150 @@ const EXT = {
     north: 37.282022
 };
 
-// Raw GitHub URL for the basemap image.
+// =====================================================
+// MAP IMAGE URLS
+// =====================================================
+
+// Main basemap image.
 const BASEMAP =
     "https://raw.githubusercontent.com/JSMITHHDR/US-83/9e27d6862f0ff6a41d1b07dd8c6b9544a0e217e5/Texas%20with%20Study%20Area%20Narrow.png";
 
+// Transparent labels image drawn above the roadway linework.
+const LABELS_OVERLAY =
+    "https://raw.githubusercontent.com/JSMITHHDR/US-83/d957daa12aee5b111ba4beebb137cbebac62d6ef/Labels.png";
+
 // =====================================================
-// FIXED DISPLAY SETTINGS
+// DISPLAY AND CALIBRATION SETTINGS
 // =====================================================
 
 const DISPLAY = {
-    // Horizontal basemap adjustment.
+    /*
+    Horizontal basemap and labels adjustment.
+
+    Negative values move the images left.
+    Positive values move the images right.
+    */
+
     basemapShiftX: 0,
 
-    // Negative values move the basemap upward.
+    /*
+    Vertical basemap and labels adjustment.
+
+    Negative values move the images upward.
+    Positive values move the images downward.
+    */
+
     basemapShiftY: 0,
 
-    // Fixed line thickness.
+    /*
+    Horizontal and vertical image scale.
+
+    1.000 = original size
+    Less than 1.000 = smaller
+    Greater than 1.000 = larger
+
+    These values are applied to both the basemap and
+    labels overlay so the two images remain aligned.
+    */
+
+    basemapScaleX: 1.000,
+    basemapScaleY: 1.000,
+
+    // Fixed roadway line thickness in pixels.
     lineWidth: 8
 };
 
+// =====================================================
+// BASEMAP CALIBRATION LIMITS
+// =====================================================
+
+const BASEMAP_CONTROL_SETTINGS = {
+    // Position-control limits in screen pixels.
+    shiftMinimum: -250,
+    shiftMaximum: 250,
+    shiftStep: 1,
+
+    // Independent horizontal and vertical scale limits.
+    scaleMinimum: 0.500,
+    scaleMaximum: 1.500,
+    scaleStep: 0.001
+};
+
+// =====================================================
+// LOAD BASEMAP IMAGE
+// =====================================================
+
+const basemap =
+    new Image();
+
+basemap.crossOrigin =
+    "anonymous";
+
+basemap.src =
+    BASEMAP;
+
+basemap.onload =
+    function ()
+    {
+        draw();
+    };
+
+basemap.onerror =
+    function ()
+    {
+        console.error(
+            "Basemap could not load:",
+            BASEMAP
+        );
+
+        if (
+            statusEl
+        )
+        {
+            statusEl.textContent +=
+                " The basemap could not be loaded.";
+        }
+
+        draw();
+    };
+
+// =====================================================
+// LOAD LABELS OVERLAY
+// =====================================================
+
+const labelsOverlay =
+    new Image();
+
+labelsOverlay.crossOrigin =
+    "anonymous";
+
+labelsOverlay.src =
+    LABELS_OVERLAY;
+
+labelsOverlay.onload =
+    function ()
+    {
+        draw();
+    };
+
+labelsOverlay.onerror =
+    function ()
+    {
+        console.error(
+            "Labels overlay could not load:",
+            LABELS_OVERLAY
+        );
+
+        if (
+            statusEl
+        )
+        {
+            statusEl.textContent +=
+                " The labels overlay could not be loaded.";
+        }
+
+        draw();
+    };
 // =====================================================
 // COLOR AND CLASSIFICATION SETTINGS
 // =====================================================
