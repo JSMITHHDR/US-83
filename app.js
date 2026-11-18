@@ -1,11 +1,9 @@
 // =====================================================
 // US 83 NEED INDEX EXPLORER
-// VERSION 5.3
+// VERSION 5.5
 // =====================================================
 
-console.log(
-    "US 83 Need Index Explorer version 5.3"
-);
+console.log("US 83 Need Index Explorer version 5.5");
 
 // =====================================================
 // MAP EXTENT
@@ -22,11 +20,9 @@ const EXT = {
 // MAP IMAGE URLS
 // =====================================================
 
-// Main basemap image.
 const BASEMAP =
     "https://raw.githubusercontent.com/JSMITHHDR/US-83/9e27d6862f0ff6a41d1b07dd8c6b9544a0e217e5/Texas%20with%20Study%20Area%20Narrow.png";
 
-// Transparent labels image drawn above the roadway linework.
 const LABELS_OVERLAY =
     "https://raw.githubusercontent.com/JSMITHHDR/US-83/d957daa12aee5b111ba4beebb137cbebac62d6ef/Labels.png";
 
@@ -35,133 +31,22 @@ const LABELS_OVERLAY =
 // =====================================================
 
 const DISPLAY = {
-    /*
-    Horizontal basemap and labels adjustment.
-
-    Negative values move the images left.
-    Positive values move the images right.
-    */
-
     basemapShiftX: 0,
-
-    /*
-    Vertical basemap and labels adjustment.
-
-    Negative values move the images upward.
-    Positive values move the images downward.
-    */
-
     basemapShiftY: 0,
-
-    /*
-    Horizontal and vertical image scale.
-
-    1.000 = original size
-    Less than 1.000 = smaller
-    Greater than 1.000 = larger
-
-    These values are applied to both the basemap and
-    labels overlay so the two images remain aligned.
-    */
-
     basemapScaleX: 1.000,
     basemapScaleY: 1.000,
-
-    // Fixed roadway line thickness in pixels.
     lineWidth: 8
 };
 
-// =====================================================
-// BASEMAP CALIBRATION LIMITS
-// =====================================================
-
 const BASEMAP_CONTROL_SETTINGS = {
-    // Position-control limits in screen pixels.
     shiftMinimum: -250,
     shiftMaximum: 250,
     shiftStep: 1,
-
-    // Independent horizontal and vertical scale limits.
     scaleMinimum: 0.500,
     scaleMaximum: 1.500,
     scaleStep: 0.001
 };
 
-// =====================================================
-// LOAD BASEMAP IMAGE
-// =====================================================
-
-const basemap =
-    new Image();
-
-basemap.crossOrigin =
-    "anonymous";
-
-basemap.src =
-    BASEMAP;
-
-basemap.onload =
-    function ()
-    {
-        draw();
-    };
-
-basemap.onerror =
-    function ()
-    {
-        console.error(
-            "Basemap could not load:",
-            BASEMAP
-        );
-
-        if (
-            statusEl
-        )
-        {
-            statusEl.textContent +=
-                " The basemap could not be loaded.";
-        }
-
-        draw();
-    };
-
-// =====================================================
-// LOAD LABELS OVERLAY
-// =====================================================
-
-const labelsOverlay =
-    new Image();
-
-labelsOverlay.crossOrigin =
-    "anonymous";
-
-labelsOverlay.src =
-    LABELS_OVERLAY;
-
-labelsOverlay.onload =
-    function ()
-    {
-        draw();
-    };
-
-labelsOverlay.onerror =
-    function ()
-    {
-        console.error(
-            "Labels overlay could not load:",
-            LABELS_OVERLAY
-        );
-
-        if (
-            statusEl
-        )
-        {
-            statusEl.textContent +=
-                " The labels overlay could not be loaded.";
-        }
-
-        draw();
-    };
 // =====================================================
 // COLOR AND CLASSIFICATION SETTINGS
 // =====================================================
@@ -191,7 +76,7 @@ const CLASSIFICATION_METHODS = {
 };
 
 // =====================================================
-// WEIGHT CONTROL SETTINGS
+// WEIGHT SETTINGS
 // =====================================================
 
 const WEIGHT_SETTINGS = {
@@ -208,30 +93,17 @@ const WEIGHT_SETTINGS = {
 const state = {
     segments: [],
     indices: [],
-
-    // Final combined Need Index by Segment ID.
     scores: new Map(),
-
-    // Current color-class assignment by Segment ID.
     colorClasses: new Map(),
-
-    // Main index-level weights.
     indexW: {},
-
-    // Individual field weights.
     fieldW: {},
-
-    // Controls whether the Future Volume Factor is used.
     useFutureVolumeFactor: true,
 
-    // Default map classification method.
     classificationMethod:
         CLASSIFICATION_METHODS.equalInterval,
 
-    // Three calculated boundaries create four classes.
     classBreaks: [],
 
-    // Current statistics for the combined scores.
     classificationStatistics: {
         minimum: 0,
         maximum: 0,
@@ -245,37 +117,25 @@ const state = {
 // =====================================================
 
 const canvas =
-    document.getElementById(
-        "map"
-    );
+    document.getElementById("map");
 
 const ctx =
-    canvas.getContext(
-        "2d"
-    );
+    canvas.getContext("2d");
 
 const statusEl =
-    document.getElementById(
-        "status"
-    );
+    document.getElementById("status");
 
 const indexWeightsDiv =
-    document.getElementById(
-        "indexWeights"
-    );
+    document.getElementById("indexWeights");
 
 const fieldWeightsDiv =
-    document.getElementById(
-        "fieldWeights"
-    );
+    document.getElementById("fieldWeights");
 
 const resetButton =
-    document.getElementById(
-        "reset"
-    );
+    document.getElementById("reset");
 
 // =====================================================
-// BASEMAP
+// LOAD BASEMAP
 // =====================================================
 
 const basemap =
@@ -293,14 +153,55 @@ basemap.onload =
 basemap.onerror =
     function ()
     {
-        statusEl.textContent +=
-            " Basemap could not load. Verify that the GitHub image is publicly accessible.";
+        console.error(
+            "Basemap could not load:",
+            BASEMAP
+        );
+
+        if (statusEl)
+        {
+            statusEl.textContent +=
+                " The basemap could not be loaded.";
+        }
 
         draw();
     };
 
 // =====================================================
-// ASPECT-PRESERVING MAP FRAME
+// LOAD LABELS OVERLAY
+// =====================================================
+
+const labelsOverlay =
+    new Image();
+
+labelsOverlay.crossOrigin =
+    "anonymous";
+
+labelsOverlay.src =
+    LABELS_OVERLAY;
+
+labelsOverlay.onload =
+    draw;
+
+labelsOverlay.onerror =
+    function ()
+    {
+        console.error(
+            "Labels overlay could not load:",
+            LABELS_OVERLAY
+        );
+
+        if (statusEl)
+        {
+            statusEl.textContent +=
+                " The labels overlay could not be loaded.";
+        }
+
+        draw();
+    };
+
+// =====================================================
+// MAP FRAME
 // =====================================================
 
 function mapFrame()
@@ -319,24 +220,17 @@ function mapFrame()
         EXT.north
         - EXT.south;
 
-    /*
-    Use one common scale for both dimensions.
-
-    This keeps the basemap and linework from being
-    independently stretched.
-    */
-
     const scale =
         Math.min(
             canvasWidth / extentWidth,
             canvasHeight / extentHeight
         );
 
-    const drawWidth =
+    const width =
         extentWidth
         * scale;
 
-    const drawHeight =
+    const height =
         extentHeight
         * scale;
 
@@ -344,22 +238,22 @@ function mapFrame()
         x:
             (
                 canvasWidth
-                - drawWidth
+                - width
             )
             / 2,
 
         y:
             (
                 canvasHeight
-                - drawHeight
+                - height
             )
             / 2,
 
         width:
-            drawWidth,
+            width,
 
         height:
-            drawHeight,
+            height,
 
         scale:
             scale
@@ -378,32 +272,75 @@ function project(
     const frame =
         mapFrame();
 
-    const x =
+    return [
         frame.x
         +
         (
             longitude
             - EXT.west
         )
-        * frame.scale;
+        * frame.scale,
 
-    const y =
         frame.y
         +
         (
             EXT.north
             - latitude
         )
-        * frame.scale;
-
-    return [
-        x,
-        y
+        * frame.scale
     ];
 }
 
 // =====================================================
-// TOTAL ACTIVE INDEX WEIGHT
+// ADJUSTED IMAGE FRAME
+// =====================================================
+
+function adjustedBasemapFrame()
+{
+    const frame =
+        mapFrame();
+
+    const width =
+        frame.width
+        * DISPLAY.basemapScaleX;
+
+    const height =
+        frame.height
+        * DISPLAY.basemapScaleY;
+
+    return {
+        x:
+            frame.x
+            -
+            (
+                width
+                - frame.width
+            )
+            / 2
+            +
+            DISPLAY.basemapShiftX,
+
+        y:
+            frame.y
+            -
+            (
+                height
+                - frame.height
+            )
+            / 2
+            +
+            DISPLAY.basemapShiftY,
+
+        width:
+            width,
+
+        height:
+            height
+    };
+}
+
+// =====================================================
+// ACTIVE INDEX WEIGHT TOTAL
 // =====================================================
 
 function activeIndexWeightTotal()
@@ -436,14 +373,6 @@ function activeIndexWeightTotal()
 // SAFE NUMERIC VALUE
 // =====================================================
 
-/*
-This reproduces the Excel expression:
-
-IF(cell="",0,cell)
-
-Blank, missing, and nonnumeric values become zero.
-*/
-
 function safeNumber(
     value
 )
@@ -472,7 +401,7 @@ function safeNumber(
 }
 
 // =====================================================
-// RAW SCORE FOR ONE SEGMENT AND ONE INDEX
+// RAW INDEX SCORE
 // =====================================================
 
 function calculateRawIndexScore(
@@ -480,7 +409,8 @@ function calculateRawIndexScore(
     index
 )
 {
-    let weightedFieldTotal = 0;
+    let weightedFieldTotal =
+        0;
 
     index.fields.forEach(
         function (field)
@@ -513,23 +443,15 @@ function calculateRawIndexScore(
         return weightedFieldTotal;
     }
 
-    const futureVolumeFactor =
-        safeNumber(
+    return weightedFieldTotal
+        * safeNumber(
             row.futureVolumeFactor
         );
-
-    return weightedFieldTotal
-        * futureVolumeFactor;
 }
 
 // =====================================================
-// NORMALIZE ONE INDEX AGAINST ITS PEAK
+// NORMALIZE INDEX AGAINST PEAK
 // =====================================================
-
-/*
-Each index is normalized independently by dividing each
-segment's raw score by the maximum raw score for the index.
-*/
 
 function calculateNormalizedIndexScores(
     index
@@ -538,7 +460,8 @@ function calculateNormalizedIndexScores(
     const rawScores =
         new Map();
 
-    let peakScore = 0;
+    let peakScore =
+        0;
 
     state.segments.forEach(
         function (segment)
@@ -581,15 +504,13 @@ function calculateNormalizedIndexScores(
                 )
                 ?? 0;
 
-            const normalizedScore =
+            normalizedScores.set(
+                segment.segmentId,
+
                 peakScore === 0
                     ? 0
                     : rawScore
-                        / peakScore;
-
-            normalizedScores.set(
-                segment.segmentId,
-                normalizedScore
+                        / peakScore
             );
         }
     );
@@ -604,7 +525,106 @@ function calculateNormalizedIndexScores(
 }
 
 // =====================================================
-// GET FINITE SCORES
+// RECALCULATE SCORES
+// =====================================================
+
+function recalculateScores()
+{
+    state.scores.clear();
+    state.colorClasses.clear();
+    state.classBreaks = [];
+
+    if (
+        activeIndexWeightTotal() <= 0
+    )
+    {
+        statusEl.textContent =
+            "All index weights are zero. No lines are displayed.";
+
+        draw();
+        return;
+    }
+
+    const normalizedIndexResults =
+        {};
+
+    state.indices.forEach(
+        function (index)
+        {
+            normalizedIndexResults[
+                index.id
+            ] =
+                calculateNormalizedIndexScores(
+                    index
+                );
+        }
+    );
+
+    state.segments.forEach(
+        function (segment)
+        {
+            let combinedWeightedTotal =
+                0;
+
+            let combinedWeightTotal =
+                0;
+
+            state.indices.forEach(
+                function (index)
+                {
+                    const indexWeight =
+                        safeNumber(
+                            state.indexW[
+                                index.id
+                            ]
+                            ?? 0
+                        );
+
+                    if (
+                        indexWeight <= 0
+                    )
+                    {
+                        return;
+                    }
+
+                    const normalizedScore =
+                        normalizedIndexResults[
+                            index.id
+                        ].scores.get(
+                            segment.segmentId
+                        )
+                        ?? 0;
+
+                    combinedWeightedTotal +=
+                        normalizedScore
+                        * indexWeight;
+
+                    combinedWeightTotal +=
+                        indexWeight;
+                }
+            );
+
+            if (
+                combinedWeightTotal > 0
+            )
+            {
+                state.scores.set(
+                    segment.segmentId,
+
+                    combinedWeightedTotal
+                    / combinedWeightTotal
+                );
+            }
+        }
+    );
+
+    assignColorClasses();
+    updateStatusMessage();
+    draw();
+}
+
+// =====================================================
+// CLASSIFICATION STATISTICS
 // =====================================================
 
 function getFiniteScores()
@@ -620,10 +640,6 @@ function getFiniteScores()
         }
     );
 }
-
-// =====================================================
-// CALCULATE SCORE STATISTICS
-// =====================================================
 
 function calculateScoreStatistics(
     scores
@@ -651,32 +667,24 @@ function calculateScoreStatistics(
             ...scores
         );
 
-    const total =
+    const mean =
         scores.reduce(
             function (
-                sum,
+                total,
                 score
             )
             {
-                return sum
+                return total
                     + score;
             },
             0
-        );
-
-    const mean =
-        total
+        )
         / scores.length;
-
-    /*
-    Population standard deviation is used because the
-    scores represent the complete displayed segment set.
-    */
 
     const variance =
         scores.reduce(
             function (
-                sum,
+                total,
                 score
             )
             {
@@ -684,18 +692,14 @@ function calculateScoreStatistics(
                     score
                     - mean;
 
-                return sum
-                    + difference
+                return total
+                    +
+                    difference
                     * difference;
             },
             0
         )
         / scores.length;
-
-    const standardDeviation =
-        Math.sqrt(
-            variance
-        );
 
     return {
         minimum:
@@ -708,12 +712,14 @@ function calculateScoreStatistics(
             mean,
 
         standardDeviation:
-            standardDeviation
+            Math.sqrt(
+                variance
+            )
     };
 }
 
 // =====================================================
-// BUILD FOUR EQUAL-INTERVAL BREAKS
+// EQUAL INTERVAL BREAKS
 // =====================================================
 
 function buildEqualIntervalBreaks(
@@ -723,11 +729,6 @@ function buildEqualIntervalBreaks(
     const range =
         statistics.maximum
         - statistics.minimum;
-
-    /*
-    If every segment has the same score, all three
-    boundaries use that score.
-    */
 
     if (
         range <= 0
@@ -759,20 +760,13 @@ function buildEqualIntervalBreaks(
 }
 
 // =====================================================
-// BUILD STANDARD-DEVIATION BREAKS
+// STANDARD DEVIATION BREAKS
 // =====================================================
 
 function buildStandardDeviationBreaks(
     statistics
 )
 {
-    /*
-    Class 1: score <= mean - 1 standard deviation
-    Class 2: score > mean - 1 SD through mean
-    Class 3: score > mean through mean + 1 SD
-    Class 4: score > mean + 1 standard deviation
-    */
-
     return [
         statistics.mean
             - statistics.standardDeviation,
@@ -785,17 +779,14 @@ function buildStandardDeviationBreaks(
 }
 
 // =====================================================
-// CALCULATE CURRENT CLASS BREAKS
+// CALCULATE CLASS BREAKS
 // =====================================================
 
 function calculateClassBreaks()
 {
-    const scores =
-        getFiniteScores();
-
     const statistics =
         calculateScoreStatistics(
-            scores
+            getFiniteScores()
         );
 
     state.classificationStatistics =
@@ -811,14 +802,14 @@ function calculateClassBreaks()
             buildStandardDeviationBreaks(
                 statistics
             );
-
-        return;
     }
-
-    state.classBreaks =
-        buildEqualIntervalBreaks(
-            statistics
-        );
+    else
+    {
+        state.classBreaks =
+            buildEqualIntervalBreaks(
+                statistics
+            );
+    }
 }
 
 // =====================================================
@@ -865,27 +856,16 @@ function getColorClass(
     return 3;
 }
 
-// =====================================================
-// GET CLASS COLOR
-// =====================================================
-
 function getClassColor(
     score
 )
 {
-    const classNumber =
+    return COLOR_CLASSES[
         getColorClass(
             score
-        );
-
-    return COLOR_CLASSES[
-        classNumber
+        )
     ].color;
 }
-
-// =====================================================
-// ASSIGN COLOR CLASSES
-// =====================================================
 
 function assignColorClasses()
 {
@@ -900,167 +880,36 @@ function assignColorClasses()
         )
         {
             if (
-                !Number.isFinite(
+                Number.isFinite(
                     score
                 )
             )
             {
-                return;
-            }
-
-            const classNumber =
-                getColorClass(
-                    score
-                );
-
-            state.colorClasses.set(
-                segmentId,
-                classNumber
-            );
-        }
-    );
-}
-
-// =====================================================
-// RECALCULATE ALL NEED INDEX SCORES
-// =====================================================
-
-function recalculateScores()
-{
-    state.scores.clear();
-    state.colorClasses.clear();
-    state.classBreaks = [];
-
-    /*
-    If every main index weight is zero, do not display
-    roadway segments.
-    */
-
-    if (
-        activeIndexWeightTotal() <= 0
-    )
-    {
-        statusEl.textContent =
-            "All index weights are zero. No lines are displayed.";
-
-        draw();
-        return;
-    }
-
-    const normalizedIndexResults =
-        {};
-
-    state.indices.forEach(
-        function (index)
-        {
-            normalizedIndexResults[
-                index.id
-            ] =
-                calculateNormalizedIndexScores(
-                    index
-                );
-        }
-    );
-
-    /*
-    Combine the normalized indexes using the main
-    index-level weights.
-    */
-
-    state.segments.forEach(
-        function (segment)
-        {
-            let combinedWeightedTotal = 0;
-            let combinedWeightTotal = 0;
-
-            state.indices.forEach(
-                function (index)
-                {
-                    const indexWeight =
-                        safeNumber(
-                            state.indexW[
-                                index.id
-                            ]
-                            ?? 0
-                        );
-
-                    if (
-                        indexWeight <= 0
+                state.colorClasses.set(
+                    segmentId,
+                    getColorClass(
+                        score
                     )
-                    {
-                        return;
-                    }
-
-                    const normalizedScore =
-                        normalizedIndexResults[
-                            index.id
-                        ].scores.get(
-                            segment.segmentId
-                        )
-                        ?? 0;
-
-                    combinedWeightedTotal +=
-                        normalizedScore
-                        * indexWeight;
-
-                    combinedWeightTotal +=
-                        indexWeight;
-                }
-            );
-
-            if (
-                combinedWeightTotal <= 0
-            )
-            {
-                return;
+                );
             }
-
-            /*
-            Divide by the total active index weight so
-            relative weighting controls the result.
-            */
-
-            const combinedScore =
-                combinedWeightedTotal
-                / combinedWeightTotal;
-
-            state.scores.set(
-                segment.segmentId,
-                combinedScore
-            );
         }
     );
-
-    assignColorClasses();
-    updateStatusMessage();
-    draw();
 }
 
 // =====================================================
-// FORMAT CLASSIFICATION VALUE
+// STATUS MESSAGE
 // =====================================================
 
 function formatClassificationValue(
     value
 )
 {
-    if (
-        !Number.isFinite(
-            value
-        )
+    return Number.isFinite(
+        value
     )
-    {
-        return "0.000";
-    }
-
-    return value.toFixed(
-        3
-    );
+        ? value.toFixed(3)
+        : "0.000";
 }
-
-// =====================================================
-// UPDATE STATUS MESSAGE
-// =====================================================
 
 function updateStatusMessage()
 {
@@ -1081,21 +930,6 @@ function updateStatusMessage()
         }
     );
 
-    const break1 =
-        formatClassificationValue(
-            state.classBreaks[0]
-        );
-
-    const break2 =
-        formatClassificationValue(
-            state.classBreaks[1]
-        );
-
-    const break3 =
-        formatClassificationValue(
-            state.classBreaks[2]
-        );
-
     const classificationName =
         state.classificationMethod
         ===
@@ -1110,11 +944,13 @@ function updateStatusMessage()
         + `${classCounts[2]} orange, `
         + `${classCounts[3]} red. `
         + `${classificationName} breaks: `
-        + `${break1}, ${break2}, and ${break3}.`;
+        + `${formatClassificationValue(state.classBreaks[0])}, `
+        + `${formatClassificationValue(state.classBreaks[1])}, and `
+        + `${formatClassificationValue(state.classBreaks[2])}.`;
 }
 
 // =====================================================
-// NORMALIZE ENTERED WEIGHT
+// NORMALIZE WEIGHT
 // =====================================================
 
 function normalizeWeight(
@@ -1138,6 +974,7 @@ function normalizeWeight(
     const clampedValue =
         Math.min(
             WEIGHT_SETTINGS.maximum,
+
             Math.max(
                 WEIGHT_SETTINGS.minimum,
                 numericValue
@@ -1159,7 +996,7 @@ function normalizeWeight(
 }
 
 // =====================================================
-// CREATE WEIGHT SLIDER WITH EDITABLE NUMBER BOX
+// CREATE WEIGHT CONTROL
 // =====================================================
 
 function createWeightSlider(
@@ -1188,7 +1025,6 @@ function createWeightSlider(
     labelName.textContent =
         labelText;
 
-    // Editable numeric weight box.
     const numberInput =
         document.createElement(
             "input"
@@ -1230,15 +1066,6 @@ function createWeightSlider(
         "decimal"
     );
 
-    label.appendChild(
-        labelName
-    );
-
-    label.appendChild(
-        numberInput
-    );
-
-    // Range slider.
     const rangeInput =
         document.createElement(
             "input"
@@ -1272,13 +1099,9 @@ function createWeightSlider(
         labelText + " slider"
     );
 
-    /*
-    Apply a valid entered weight to the number box,
-    slider, application state, and map.
-    */
-
     function applyWeight(
-        value
+        value,
+        formatNumberBox
     )
     {
         const normalizedValue =
@@ -1290,7 +1113,7 @@ function createWeightSlider(
             normalizedValue === null
         )
         {
-            return false;
+            return;
         }
 
         rangeInput.value =
@@ -1298,105 +1121,68 @@ function createWeightSlider(
                 normalizedValue
             );
 
-        numberInput.value =
-            normalizedValue.toFixed(
-                1
-            );
+        if (
+            formatNumberBox
+        )
+        {
+            numberInput.value =
+                normalizedValue.toFixed(
+                    1
+                );
+        }
 
         changeFunction(
             normalizedValue
         );
-
-        return true;
     }
-
-    /*
-    Moving the slider updates the number box.
-    */
 
     rangeInput.addEventListener(
         "input",
         function ()
         {
-            const value =
-                normalizeWeight(
-                    rangeInput.value
-                );
-
-            if (
-                value === null
-            )
-            {
-                return;
-            }
-
             numberInput.value =
-                value.toFixed(
+                Number(
+                    rangeInput.value
+                ).toFixed(
                     1
                 );
 
-            changeFunction(
-                value
+            applyWeight(
+                rangeInput.value,
+                false
             );
         }
     );
-
-    /*
-    Typing a valid number updates the slider and map.
-
-    The box is not reformatted until the user presses
-    Enter or leaves the box.
-    */
 
     numberInput.addEventListener(
         "input",
         function ()
         {
             if (
-                numberInput.value.trim() === ""
+                numberInput.value.trim()
+                !== ""
             )
             {
-                return;
-            }
-
-            const value =
-                normalizeWeight(
-                    numberInput.value
+                applyWeight(
+                    numberInput.value,
+                    false
                 );
-
-            if (
-                value === null
-            )
-            {
-                return;
             }
-
-            rangeInput.value =
-                String(
-                    value
-                );
-
-            changeFunction(
-                value
-            );
         }
     );
-
-    /*
-    Validate and format the number when the user leaves
-    the number box.
-    */
 
     numberInput.addEventListener(
         "blur",
         function ()
         {
             if (
-                numberInput.value.trim() === ""
+                numberInput.value.trim()
+                === ""
                 ||
                 normalizeWeight(
                     numberInput.value
-                ) === null
+                )
+                === null
             )
             {
                 numberInput.value =
@@ -1410,48 +1196,39 @@ function createWeightSlider(
             }
 
             applyWeight(
-                numberInput.value
+                numberInput.value,
+                true
             );
         }
     );
-
-    /*
-    Pressing Enter applies and formats the typed value.
-    */
 
     numberInput.addEventListener(
         "keydown",
         function (event)
         {
             if (
-                event.key !== "Enter"
+                event.key === "Enter"
             )
             {
-                return;
-            }
+                event.preventDefault();
 
-            event.preventDefault();
-
-            if (
-                numberInput.value.trim() === ""
-            )
-            {
-                numberInput.value =
-                    Number(
-                        rangeInput.value
-                    ).toFixed(
-                        1
-                    );
-            }
-            else
-            {
                 applyWeight(
                     numberInput.value
+                    || rangeInput.value,
+                    true
                 );
-            }
 
-            numberInput.blur();
+                numberInput.blur();
+            }
         }
+    );
+
+    label.appendChild(
+        labelName
+    );
+
+    label.appendChild(
+        numberInput
     );
 
     container.appendChild(
@@ -1466,7 +1243,7 @@ function createWeightSlider(
 }
 
 // =====================================================
-// BUILD INDEX AND FIELD WEIGHT CONTROLS
+// BUILD WEIGHT CONTROLS
 // =====================================================
 
 function buildWeightControls()
@@ -1480,7 +1257,6 @@ function buildWeightControls()
     state.indices.forEach(
         function (index)
         {
-            // Equal default index weight.
             state.indexW[
                 index.id
             ] =
@@ -1491,9 +1267,10 @@ function buildWeightControls()
             ] =
                 {};
 
-            const indexSlider =
+            const indexControl =
                 createWeightSlider(
                     index.name,
+
                     function (value)
                     {
                         state.indexW[
@@ -1506,10 +1283,9 @@ function buildWeightControls()
                 );
 
             indexWeightsDiv.appendChild(
-                indexSlider
+                indexControl
             );
 
-            // Expandable field controls.
             const details =
                 document.createElement(
                     "details"
@@ -1530,15 +1306,15 @@ function buildWeightControls()
             index.fields.forEach(
                 function (field)
                 {
-                    // Equal default field weight.
                     state.fieldW[
                         index.id
                     ][field] =
                         WEIGHT_SETTINGS.defaultValue;
 
-                    const fieldSlider =
+                    const fieldControl =
                         createWeightSlider(
                             field,
+
                             function (value)
                             {
                                 state.fieldW[
@@ -1551,7 +1327,7 @@ function buildWeightControls()
                         );
 
                     details.appendChild(
-                        fieldSlider
+                        fieldControl
                     );
                 }
             );
@@ -1564,7 +1340,28 @@ function buildWeightControls()
 }
 
 // =====================================================
-// BUILD FUTURE VOLUME FACTOR TOGGLE
+// INSERT CONTROL BEFORE RESET
+// =====================================================
+
+function insertControlBeforeReset(
+    control
+)
+{
+    if (
+        resetButton
+        &&
+        resetButton.parentNode
+    )
+    {
+        resetButton.parentNode.insertBefore(
+            control,
+            resetButton
+        );
+    }
+}
+
+// =====================================================
+// FUTURE VOLUME FACTOR TOGGLE
 // =====================================================
 
 function buildFutureVolumeToggle()
@@ -1627,21 +1424,13 @@ function buildFutureVolumeToggle()
         label
     );
 
-    if (
-        resetButton
-        &&
-        resetButton.parentNode
-    )
-    {
-        resetButton.parentNode.insertBefore(
-            container,
-            resetButton
-        );
-    }
+    insertControlBeforeReset(
+        container
+    );
 }
 
 // =====================================================
-// BUILD CLASSIFICATION METHOD SELECTOR
+// CLASSIFICATION SELECTOR
 // =====================================================
 
 function buildClassificationToggle()
@@ -1673,134 +1462,91 @@ function buildClassificationToggle()
     options.className =
         "classification-options";
 
-    // Equal interval option.
-    const equalIntervalLabel =
-        document.createElement(
-            "label"
+    function addOption(
+        value,
+        text,
+        checked
+    )
+    {
+        const label =
+            document.createElement(
+                "label"
+            );
+
+        const input =
+            document.createElement(
+                "input"
+            );
+
+        input.type =
+            "radio";
+
+        input.name =
+            "classificationMethod";
+
+        input.value =
+            value;
+
+        input.checked =
+            checked;
+
+        const labelText =
+            document.createElement(
+                "span"
+            );
+
+        labelText.textContent =
+            text;
+
+        input.addEventListener(
+            "change",
+            function ()
+            {
+                if (
+                    !input.checked
+                )
+                {
+                    return;
+                }
+
+                state.classificationMethod =
+                    value;
+
+                assignColorClasses();
+                updateStatusMessage();
+                draw();
+            }
         );
 
-    const equalIntervalInput =
-        document.createElement(
-            "input"
+        label.appendChild(
+            input
         );
 
-    equalIntervalInput.type =
-        "radio";
+        label.appendChild(
+            labelText
+        );
 
-    equalIntervalInput.name =
-        "classificationMethod";
+        options.appendChild(
+            label
+        );
+    }
 
-    equalIntervalInput.value =
-        CLASSIFICATION_METHODS.equalInterval;
+    addOption(
+        CLASSIFICATION_METHODS.equalInterval,
+        "4 Equal Intervals",
 
-    equalIntervalInput.checked =
         state.classificationMethod
         ===
-        CLASSIFICATION_METHODS.equalInterval;
-
-    const equalIntervalText =
-        document.createElement(
-            "span"
-        );
-
-    equalIntervalText.textContent =
-        "4 Equal Intervals";
-
-    equalIntervalLabel.appendChild(
-        equalIntervalInput
+        CLASSIFICATION_METHODS.equalInterval
     );
 
-    equalIntervalLabel.appendChild(
-        equalIntervalText
-    );
+    addOption(
+        CLASSIFICATION_METHODS.standardDeviation,
+        "Standard Deviation",
 
-    // Standard deviation option.
-    const standardDeviationLabel =
-        document.createElement(
-            "label"
-        );
-
-    const standardDeviationInput =
-        document.createElement(
-            "input"
-        );
-
-    standardDeviationInput.type =
-        "radio";
-
-    standardDeviationInput.name =
-        "classificationMethod";
-
-    standardDeviationInput.value =
-        CLASSIFICATION_METHODS.standardDeviation;
-
-    standardDeviationInput.checked =
         state.classificationMethod
         ===
-        CLASSIFICATION_METHODS.standardDeviation;
-
-    const standardDeviationText =
-        document.createElement(
-            "span"
-        );
-
-    standardDeviationText.textContent =
-        "Standard Deviation";
-
-    standardDeviationLabel.appendChild(
-        standardDeviationInput
-    );
-
-    standardDeviationLabel.appendChild(
-        standardDeviationText
-    );
-
-    equalIntervalInput.addEventListener(
-        "change",
-        function ()
-        {
-            if (
-                !equalIntervalInput.checked
-            )
-            {
-                return;
-            }
-
-            state.classificationMethod =
-                CLASSIFICATION_METHODS.equalInterval;
-
-            assignColorClasses();
-            updateStatusMessage();
-            draw();
-        }
-    );
-
-    standardDeviationInput.addEventListener(
-        "change",
-        function ()
-        {
-            if (
-                !standardDeviationInput.checked
-            )
-            {
-                return;
-            }
-
-            state.classificationMethod =
-                CLASSIFICATION_METHODS.standardDeviation;
-
-            assignColorClasses();
-            updateStatusMessage();
-            draw();
-        }
-    );
-
-    options.appendChild(
-        equalIntervalLabel
-    );
-
-    options.appendChild(
-        standardDeviationLabel
+        CLASSIFICATION_METHODS.standardDeviation
     );
 
     container.appendChild(
@@ -1811,17 +1557,614 @@ function buildClassificationToggle()
         options
     );
 
+    insertControlBeforeReset(
+        container
+    );
+}
+
+// =====================================================
+// BASEMAP CALIBRATION UTILITIES
+// =====================================================
+
+function clampNumber(
+    value,
+    minimum,
+    maximum
+)
+{
+    const numericValue =
+        Number(
+            value
+        );
+
     if (
-        resetButton
-        &&
-        resetButton.parentNode
+        !Number.isFinite(
+            numericValue
+        )
     )
     {
-        resetButton.parentNode.insertBefore(
-            container,
-            resetButton
+        return null;
+    }
+
+    return Math.min(
+        maximum,
+
+        Math.max(
+            minimum,
+            numericValue
+        )
+    );
+}
+
+function createBasemapCalibrationControl(
+    labelText,
+    propertyName,
+    minimum,
+    maximum,
+    step,
+    decimalPlaces
+)
+{
+    const container =
+        document.createElement(
+            "div"
+        );
+
+    container.className =
+        "slider calibration-slider";
+
+    const label =
+        document.createElement(
+            "label"
+        );
+
+    const labelName =
+        document.createElement(
+            "span"
+        );
+
+    labelName.textContent =
+        labelText;
+
+    const numberInput =
+        document.createElement(
+            "input"
+        );
+
+    numberInput.type =
+        "number";
+
+    numberInput.className =
+        "weight-number calibration-number";
+
+    numberInput.min =
+        String(
+            minimum
+        );
+
+    numberInput.max =
+        String(
+            maximum
+        );
+
+    numberInput.step =
+        String(
+            step
+        );
+
+    numberInput.value =
+        Number(
+            DISPLAY[
+                propertyName
+            ]
+        ).toFixed(
+            decimalPlaces
+        );
+
+    const rangeInput =
+        document.createElement(
+            "input"
+        );
+
+    rangeInput.type =
+        "range";
+
+    rangeInput.min =
+        String(
+            minimum
+        );
+
+    rangeInput.max =
+        String(
+            maximum
+        );
+
+    rangeInput.step =
+        String(
+            step
+        );
+
+    rangeInput.value =
+        String(
+            DISPLAY[
+                propertyName
+            ]
+        );
+
+    function applyValue(
+        value,
+        formatNumberBox
+    )
+    {
+        const clampedValue =
+            clampNumber(
+                value,
+                minimum,
+                maximum
+            );
+
+        if (
+            clampedValue === null
+        )
+        {
+            return;
+        }
+
+        DISPLAY[
+            propertyName
+        ] =
+            clampedValue;
+
+        rangeInput.value =
+            String(
+                clampedValue
+            );
+
+        if (
+            formatNumberBox
+        )
+        {
+            numberInput.value =
+                clampedValue.toFixed(
+                    decimalPlaces
+                );
+        }
+
+        updateBasemapCalibrationReadout();
+        draw();
+    }
+
+    rangeInput.addEventListener(
+        "input",
+        function ()
+        {
+            numberInput.value =
+                Number(
+                    rangeInput.value
+                ).toFixed(
+                    decimalPlaces
+                );
+
+            applyValue(
+                rangeInput.value,
+                false
+            );
+        }
+    );
+
+    numberInput.addEventListener(
+        "input",
+        function ()
+        {
+            if (
+                numberInput.value.trim()
+                !== ""
+            )
+            {
+                applyValue(
+                    numberInput.value,
+                    false
+                );
+            }
+        }
+    );
+
+    numberInput.addEventListener(
+        "blur",
+        function ()
+        {
+            if (
+                numberInput.value.trim()
+                === ""
+                ||
+                clampNumber(
+                    numberInput.value,
+                    minimum,
+                    maximum
+                )
+                === null
+            )
+            {
+                numberInput.value =
+                    Number(
+                        DISPLAY[
+                            propertyName
+                        ]
+                    ).toFixed(
+                        decimalPlaces
+                    );
+
+                return;
+            }
+
+            applyValue(
+                numberInput.value,
+                true
+            );
+        }
+    );
+
+    numberInput.addEventListener(
+        "keydown",
+        function (event)
+        {
+            if (
+                event.key === "Enter"
+            )
+            {
+                event.preventDefault();
+
+                applyValue(
+                    numberInput.value,
+                    true
+                );
+
+                numberInput.blur();
+            }
+        }
+    );
+
+    label.appendChild(
+        labelName
+    );
+
+    label.appendChild(
+        numberInput
+    );
+
+    container.appendChild(
+        label
+    );
+
+    container.appendChild(
+        rangeInput
+    );
+
+    container.rangeInput =
+        rangeInput;
+
+    container.numberInput =
+        numberInput;
+
+    container.propertyName =
+        propertyName;
+
+    container.decimalPlaces =
+        decimalPlaces;
+
+    return container;
+}
+
+// =====================================================
+// CALIBRATION READOUT
+// =====================================================
+
+function getBasemapCalibrationText()
+{
+    return (
+        "basemapShiftX: "
+        + DISPLAY.basemapShiftX.toFixed(0)
+        + ", basemapShiftY: "
+        + DISPLAY.basemapShiftY.toFixed(0)
+        + ", basemapScaleX: "
+        + DISPLAY.basemapScaleX.toFixed(3)
+        + ", basemapScaleY: "
+        + DISPLAY.basemapScaleY.toFixed(3)
+    );
+}
+
+function updateBasemapCalibrationReadout()
+{
+    const readout =
+        document.getElementById(
+            "basemapCalibrationReadout"
+        );
+
+    if (
+        readout
+    )
+    {
+        readout.textContent =
+            getBasemapCalibrationText();
+    }
+}
+
+function copyBasemapCalibrationValues(
+    button
+)
+{
+    const calibrationCode =
+        "basemapShiftX: "
+        + DISPLAY.basemapShiftX.toFixed(0)
+        + ",\n"
+        + "basemapShiftY: "
+        + DISPLAY.basemapShiftY.toFixed(0)
+        + ",\n"
+        + "basemapScaleX: "
+        + DISPLAY.basemapScaleX.toFixed(3)
+        + ",\n"
+        + "basemapScaleY: "
+        + DISPLAY.basemapScaleY.toFixed(3);
+
+    if (
+        navigator.clipboard
+        &&
+        navigator.clipboard.writeText
+    )
+    {
+        navigator.clipboard.writeText(
+            calibrationCode
+        )
+        .then(
+            function ()
+            {
+                const originalText =
+                    button.textContent;
+
+                button.textContent =
+                    "Values Copied";
+
+                window.setTimeout(
+                    function ()
+                    {
+                        button.textContent =
+                            originalText;
+                    },
+                    1500
+                );
+            }
+        )
+        .catch(
+            function ()
+            {
+                window.prompt(
+                    "Copy these basemap values:",
+                    calibrationCode
+                );
+            }
         );
     }
+    else
+    {
+        window.prompt(
+            "Copy these basemap values:",
+            calibrationCode
+        );
+    }
+}
+
+// =====================================================
+// BUILD BASEMAP CALIBRATION CONTROLS
+// =====================================================
+
+function buildBasemapCalibrationControls()
+{
+    const panel =
+        document.createElement(
+            "div"
+        );
+
+    panel.className =
+        "classification-control basemap-calibration";
+
+    panel.id =
+        "basemapCalibrationPanel";
+
+    const heading =
+        document.createElement(
+            "div"
+        );
+
+    heading.className =
+        "classification-title";
+
+    heading.textContent =
+        "Basemap and Labels Calibration";
+
+    const instructions =
+        document.createElement(
+            "p"
+        );
+
+    instructions.className =
+        "calibration-instructions";
+
+    instructions.textContent =
+        "These controls move and resize the basemap and labels together while the roadway linework remains fixed.";
+
+    const controls = [
+        createBasemapCalibrationControl(
+            "Horizontal Position",
+            "basemapShiftX",
+            BASEMAP_CONTROL_SETTINGS.shiftMinimum,
+            BASEMAP_CONTROL_SETTINGS.shiftMaximum,
+            BASEMAP_CONTROL_SETTINGS.shiftStep,
+            0
+        ),
+
+        createBasemapCalibrationControl(
+            "Vertical Position",
+            "basemapShiftY",
+            BASEMAP_CONTROL_SETTINGS.shiftMinimum,
+            BASEMAP_CONTROL_SETTINGS.shiftMaximum,
+            BASEMAP_CONTROL_SETTINGS.shiftStep,
+            0
+        ),
+
+        createBasemapCalibrationControl(
+            "Horizontal Scale",
+            "basemapScaleX",
+            BASEMAP_CONTROL_SETTINGS.scaleMinimum,
+            BASEMAP_CONTROL_SETTINGS.scaleMaximum,
+            BASEMAP_CONTROL_SETTINGS.scaleStep,
+            3
+        ),
+
+        createBasemapCalibrationControl(
+            "Vertical Scale",
+            "basemapScaleY",
+            BASEMAP_CONTROL_SETTINGS.scaleMinimum,
+            BASEMAP_CONTROL_SETTINGS.scaleMaximum,
+            BASEMAP_CONTROL_SETTINGS.scaleStep,
+            3
+        )
+    ];
+
+    const readout =
+        document.createElement(
+            "div"
+        );
+
+    readout.id =
+        "basemapCalibrationReadout";
+
+    readout.className =
+        "calibration-readout";
+
+    const buttonRow =
+        document.createElement(
+            "div"
+        );
+
+    buttonRow.className =
+        "calibration-buttons";
+
+    const resetCalibrationButton =
+        document.createElement(
+            "button"
+        );
+
+    resetCalibrationButton.type =
+        "button";
+
+    resetCalibrationButton.className =
+        "secondary-button";
+
+    resetCalibrationButton.textContent =
+        "Reset Images";
+
+    const copyValuesButton =
+        document.createElement(
+            "button"
+        );
+
+    copyValuesButton.type =
+        "button";
+
+    copyValuesButton.textContent =
+        "Copy Values";
+
+    resetCalibrationButton.addEventListener(
+        "click",
+        function ()
+        {
+            DISPLAY.basemapShiftX =
+                0;
+
+            DISPLAY.basemapShiftY =
+                0;
+
+            DISPLAY.basemapScaleX =
+                1;
+
+            DISPLAY.basemapScaleY =
+                1;
+
+            controls.forEach(
+                function (control)
+                {
+                    const value =
+                        DISPLAY[
+                            control.propertyName
+                        ];
+
+                    control.rangeInput.value =
+                        String(
+                            value
+                        );
+
+                    control.numberInput.value =
+                        Number(
+                            value
+                        ).toFixed(
+                            control.decimalPlaces
+                        );
+                }
+            );
+
+            updateBasemapCalibrationReadout();
+            draw();
+        }
+    );
+
+    copyValuesButton.addEventListener(
+        "click",
+        function ()
+        {
+            copyBasemapCalibrationValues(
+                copyValuesButton
+            );
+        }
+    );
+
+    buttonRow.appendChild(
+        resetCalibrationButton
+    );
+
+    buttonRow.appendChild(
+        copyValuesButton
+    );
+
+    panel.appendChild(
+        heading
+    );
+
+    panel.appendChild(
+        instructions
+    );
+
+    controls.forEach(
+        function (control)
+        {
+            panel.appendChild(
+                control
+            );
+        }
+    );
+
+    panel.appendChild(
+        readout
+    );
+
+    panel.appendChild(
+        buttonRow
+    );
+
+    insertControlBeforeReset(
+        panel
+    );
+
+    updateBasemapCalibrationReadout();
 }
 
 // =====================================================
@@ -1920,6 +2263,35 @@ function createSegmentPath(
 }
 
 // =====================================================
+// DRAW IMAGE USING CALIBRATED FRAME
+// =====================================================
+
+function drawImageToAdjustedFrame(
+    image
+)
+{
+    if (
+        !image.complete
+        ||
+        image.naturalWidth <= 0
+    )
+    {
+        return;
+    }
+
+    const frame =
+        adjustedBasemapFrame();
+
+    ctx.drawImage(
+        image,
+        frame.x,
+        frame.y,
+        frame.width,
+        frame.height
+    );
+}
+
+// =====================================================
 // DRAW MAP
 // =====================================================
 
@@ -1948,94 +2320,65 @@ function draw()
         height
     );
 
-    const frame =
-        mapFrame();
+    // Draw the main basemap first.
+    drawImageToAdjustedFrame(
+        basemap
+    );
 
-    /*
-    Draw the basemap with the fixed vertical adjustment.
-    The roadway linework remains fixed.
-    */
-
+    // Draw roadway lines above the basemap.
     if (
-        basemap.complete
-        &&
-        basemap.naturalWidth > 0
+        state.indices.length === 0
+        ||
+        activeIndexWeightTotal() > 0
     )
     {
-        ctx.drawImage(
-            basemap,
+        ctx.lineCap =
+            "round";
 
-            frame.x
-                + DISPLAY.basemapShiftX,
+        ctx.lineJoin =
+            "round";
 
-            frame.y
-                + DISPLAY.basemapShiftY,
+        state.segments.forEach(
+            function (segment)
+            {
+                if (
+                    !state.scores.has(
+                        segment.segmentId
+                    )
+                    ||
+                    !state.colorClasses.has(
+                        segment.segmentId
+                    )
+                )
+                {
+                    return;
+                }
 
-            frame.width,
-            frame.height
+                const score =
+                    state.scores.get(
+                        segment.segmentId
+                    );
+
+                createSegmentPath(
+                    segment
+                );
+
+                ctx.strokeStyle =
+                    getClassColor(
+                        score
+                    );
+
+                ctx.lineWidth =
+                    DISPLAY.lineWidth;
+
+                ctx.stroke();
+            }
         );
     }
 
-    /*
-    Do not draw roadway lines when every main index
-    weight is zero.
-    */
-
-    if (
-        state.indices.length > 0
-        &&
-        activeIndexWeightTotal() <= 0
-    )
-    {
-        return;
-    }
-
-    ctx.lineCap =
-        "round";
-
-    ctx.lineJoin =
-        "round";
-
-    state.segments.forEach(
-        function (segment)
-        {
-            if (
-                !state.scores.has(
-                    segment.segmentId
-                )
-                ||
-                !state.colorClasses.has(
-                    segment.segmentId
-                )
-            )
-            {
-                return;
-            }
-
-            const score =
-                state.scores.get(
-                    segment.segmentId
-                );
-
-            createSegmentPath(
-                segment
-            );
-
-            /*
-            Use one colored stroke only.
-            No casing or outline is applied.
-            */
-
-            ctx.strokeStyle =
-                getClassColor(
-                    score
-                );
-
-            ctx.lineWidth =
-                DISPLAY.lineWidth;
-
-            ctx.stroke();
-        }
+    // Draw the transparent labels overlay last.
+    drawImageToAdjustedFrame(
+        labelsOverlay
     );
 }
 
@@ -2094,6 +2437,7 @@ Promise.all([
         buildWeightControls();
         buildFutureVolumeToggle();
         buildClassificationToggle();
+        buildBasemapCalibrationControls();
         recalculateScores();
         resizeCanvas();
     }
@@ -2114,7 +2458,7 @@ Promise.all([
 );
 
 // =====================================================
-// RESET WEIGHTS
+// RESET APPLICATION
 // =====================================================
 
 resetButton.addEventListener(
