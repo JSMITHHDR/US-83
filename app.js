@@ -1,9 +1,9 @@
 // =====================================================
 // US 83 NEED INDEX EXPLORER
-// VERSION 5.5
+// VERSION 5.6
 // =====================================================
 
-console.log("US 83 Need Index Explorer version 5.5");
+console.log("US 83 Need Index Explorer version 5.6");
 
 // =====================================================
 // MAP EXTENT
@@ -26,6 +26,38 @@ const BASEMAP =
 const LABELS_OVERLAY =
     "https://raw.githubusercontent.com/JSMITHHDR/US-83/d957daa12aee5b111ba4beebb137cbebac62d6ef/Labels.png";
 
+// =====================================================
+// FIXED DISPLAY SETTINGS
+// =====================================================
+
+const DISPLAY = {
+    /*
+    Fixed basemap and labels position.
+
+    Negative Shift X moves the images left.
+    Positive Shift X moves the images right.
+
+    Negative Shift Y moves the images upward.
+    Positive Shift Y moves the images downward.
+    */
+
+    basemapShiftX: 0,
+    basemapShiftY: 0,
+
+    /*
+    Fixed image scale.
+
+    1.000 = original size
+    Less than 1.000 = smaller
+    Greater than 1.000 = larger
+    */
+
+    basemapScaleX: 1.000,
+    basemapScaleY: 1.000,
+
+    // Fixed roadway line thickness in pixels.
+    lineWidth: 8
+};
 
 // =====================================================
 // COLOR AND CLASSIFICATION SETTINGS
@@ -73,17 +105,30 @@ const WEIGHT_SETTINGS = {
 const state = {
     segments: [],
     indices: [],
+
+    // Final combined Need Index by Segment ID.
     scores: new Map(),
+
+    // Current color class by Segment ID.
     colorClasses: new Map(),
+
+    // Main index-level weights.
     indexW: {},
+
+    // Individual field weights.
     fieldW: {},
+
+    // Controls whether Future Volume Factor is applied.
     useFutureVolumeFactor: true,
 
+    // Current classification method.
     classificationMethod:
         CLASSIFICATION_METHODS.equalInterval,
 
+    // Three boundaries used to create four classes.
     classBreaks: [],
 
+    // Statistics for the current combined scores.
     classificationStatistics: {
         minimum: 0,
         maximum: 0,
@@ -200,6 +245,11 @@ function mapFrame()
         EXT.north
         - EXT.south;
 
+    /*
+    Use one common scale for both dimensions so the
+    map is not stretched independently.
+    */
+
     const scale =
         Math.min(
             canvasWidth / extentWidth,
@@ -252,27 +302,32 @@ function project(
     const frame =
         mapFrame();
 
-    return [
+    const x =
         frame.x
         +
         (
             longitude
             - EXT.west
         )
-        * frame.scale,
+        * frame.scale;
 
+    const y =
         frame.y
         +
         (
             EXT.north
             - latitude
         )
-        * frame.scale
+        * frame.scale;
+
+    return [
+        x,
+        y
     ];
 }
 
 // =====================================================
-// ADJUSTED IMAGE FRAME
+// FIXED BASEMAP AND LABELS FRAME
 // =====================================================
 
 function adjustedBasemapFrame()
@@ -288,28 +343,39 @@ function adjustedBasemapFrame()
         frame.height
         * DISPLAY.basemapScaleY;
 
+    /*
+    Scale around the middle of the original image frame,
+    then apply the fixed horizontal and vertical shifts.
+    */
+
+    const x =
+        frame.x
+        -
+        (
+            width
+            - frame.width
+        )
+        / 2
+        +
+        DISPLAY.basemapShiftX;
+
+    const y =
+        frame.y
+        -
+        (
+            height
+            - frame.height
+        )
+        / 2
+        +
+        DISPLAY.basemapShiftY;
+
     return {
         x:
-            frame.x
-            -
-            (
-                width
-                - frame.width
-            )
-            / 2
-            +
-            DISPLAY.basemapShiftX,
+            x,
 
         y:
-            frame.y
-            -
-            (
-                height
-                - frame.height
-            )
-            / 2
-            +
-            DISPLAY.basemapShiftY,
+            y,
 
         width:
             width,
@@ -381,7 +447,7 @@ function safeNumber(
 }
 
 // =====================================================
-// RAW INDEX SCORE
+// RAW SCORE FOR ONE SEGMENT AND ONE INDEX
 // =====================================================
 
 function calculateRawIndexScore(
@@ -423,14 +489,17 @@ function calculateRawIndexScore(
         return weightedFieldTotal;
     }
 
-    return weightedFieldTotal
-        * safeNumber(
+    const futureVolumeFactor =
+        safeNumber(
             row.futureVolumeFactor
         );
+
+    return weightedFieldTotal
+        * futureVolumeFactor;
 }
 
 // =====================================================
-// NORMALIZE INDEX AGAINST PEAK
+// NORMALIZE ONE INDEX AGAINST ITS PEAK
 // =====================================================
 
 function calculateNormalizedIndexScores(
@@ -484,13 +553,15 @@ function calculateNormalizedIndexScores(
                 )
                 ?? 0;
 
-            normalizedScores.set(
-                segment.segmentId,
-
+            const normalizedScore =
                 peakScore === 0
                     ? 0
                     : rawScore
-                        / peakScore
+                        / peakScore;
+
+            normalizedScores.set(
+                segment.segmentId,
+                normalizedScore
             );
         }
     );
@@ -505,7 +576,7 @@ function calculateNormalizedIndexScores(
 }
 
 // =====================================================
-// RECALCULATE SCORES
+// RECALCULATE ALL NEED INDEX SCORES
 // =====================================================
 
 function recalculateScores()
@@ -513,6 +584,11 @@ function recalculateScores()
     state.scores.clear();
     state.colorClasses.clear();
     state.classBreaks = [];
+
+    /*
+    When all main index weights are zero, no roadway
+    lines are displayed.
+    */
 
     if (
         activeIndexWeightTotal() <= 0
@@ -539,6 +615,11 @@ function recalculateScores()
                 );
         }
     );
+
+    /*
+    Combine normalized index scores using the main
+    index-level weights.
+    */
 
     state.segments.forEach(
         function (segment)
@@ -585,16 +666,20 @@ function recalculateScores()
             );
 
             if (
-                combinedWeightTotal > 0
+                combinedWeightTotal <= 0
             )
             {
-                state.scores.set(
-                    segment.segmentId,
-
-                    combinedWeightedTotal
-                    / combinedWeightTotal
-                );
+                return;
             }
+
+            const combinedScore =
+                combinedWeightedTotal
+                / combinedWeightTotal;
+
+            state.scores.set(
+                segment.segmentId,
+                combinedScore
+            );
         }
     );
 
@@ -604,7 +689,7 @@ function recalculateScores()
 }
 
 // =====================================================
-// CLASSIFICATION STATISTICS
+// GET FINITE SCORES
 // =====================================================
 
 function getFiniteScores()
@@ -620,6 +705,10 @@ function getFiniteScores()
         }
     );
 }
+
+// =====================================================
+// CALCULATE SCORE STATISTICS
+// =====================================================
 
 function calculateScoreStatistics(
     scores
@@ -647,24 +736,33 @@ function calculateScoreStatistics(
             ...scores
         );
 
-    const mean =
+    const total =
         scores.reduce(
             function (
-                total,
+                sum,
                 score
             )
             {
-                return total
+                return sum
                     + score;
             },
             0
-        )
+        );
+
+    const mean =
+        total
         / scores.length;
+
+    /*
+    Population standard deviation is used because the
+    displayed corridor segments are treated as the
+    complete analysis set.
+    */
 
     const variance =
         scores.reduce(
             function (
-                total,
+                sum,
                 score
             )
             {
@@ -672,7 +770,7 @@ function calculateScoreStatistics(
                     score
                     - mean;
 
-                return total
+                return sum
                     +
                     difference
                     * difference;
@@ -699,7 +797,7 @@ function calculateScoreStatistics(
 }
 
 // =====================================================
-// EQUAL INTERVAL BREAKS
+// BUILD FOUR EQUAL-INTERVAL BREAKS
 // =====================================================
 
 function buildEqualIntervalBreaks(
@@ -740,7 +838,7 @@ function buildEqualIntervalBreaks(
 }
 
 // =====================================================
-// STANDARD DEVIATION BREAKS
+// BUILD STANDARD-DEVIATION BREAKS
 // =====================================================
 
 function buildStandardDeviationBreaks(
@@ -759,14 +857,17 @@ function buildStandardDeviationBreaks(
 }
 
 // =====================================================
-// CALCULATE CLASS BREAKS
+// CALCULATE CURRENT CLASS BREAKS
 // =====================================================
 
 function calculateClassBreaks()
 {
+    const scores =
+        getFiniteScores();
+
     const statistics =
         calculateScoreStatistics(
-            getFiniteScores()
+            scores
         );
 
     state.classificationStatistics =
@@ -782,14 +883,14 @@ function calculateClassBreaks()
             buildStandardDeviationBreaks(
                 statistics
             );
+
+        return;
     }
-    else
-    {
-        state.classBreaks =
-            buildEqualIntervalBreaks(
-                statistics
-            );
-    }
+
+    state.classBreaks =
+        buildEqualIntervalBreaks(
+            statistics
+        );
 }
 
 // =====================================================
@@ -836,16 +937,27 @@ function getColorClass(
     return 3;
 }
 
+// =====================================================
+// GET CLASS COLOR
+// =====================================================
+
 function getClassColor(
     score
 )
 {
-    return COLOR_CLASSES[
+    const classNumber =
         getColorClass(
             score
-        )
+        );
+
+    return COLOR_CLASSES[
+        classNumber
     ].color;
 }
+
+// =====================================================
+// ASSIGN COLOR CLASSES
+// =====================================================
 
 function assignColorClasses()
 {
@@ -860,36 +972,49 @@ function assignColorClasses()
         )
         {
             if (
-                Number.isFinite(
+                !Number.isFinite(
                     score
                 )
             )
             {
-                state.colorClasses.set(
-                    segmentId,
-                    getColorClass(
-                        score
-                    )
-                );
+                return;
             }
+
+            state.colorClasses.set(
+                segmentId,
+                getColorClass(
+                    score
+                )
+            );
         }
     );
 }
 
 // =====================================================
-// STATUS MESSAGE
+// FORMAT CLASSIFICATION VALUE
 // =====================================================
 
 function formatClassificationValue(
     value
 )
 {
-    return Number.isFinite(
-        value
+    if (
+        !Number.isFinite(
+            value
+        )
     )
-        ? value.toFixed(3)
-        : "0.000";
+    {
+        return "0.000";
+    }
+
+    return value.toFixed(
+        3
+    );
 }
+
+// =====================================================
+// UPDATE STATUS MESSAGE
+// =====================================================
 
 function updateStatusMessage()
 {
@@ -930,7 +1055,7 @@ function updateStatusMessage()
 }
 
 // =====================================================
-// NORMALIZE WEIGHT
+// NORMALIZE ENTERED WEIGHT
 // =====================================================
 
 function normalizeWeight(
@@ -976,7 +1101,7 @@ function normalizeWeight(
 }
 
 // =====================================================
-// CREATE WEIGHT CONTROL
+// CREATE WEIGHT SLIDER WITH EDITABLE NUMBER BOX
 // =====================================================
 
 function createWeightSlider(
@@ -1140,14 +1265,16 @@ function createWeightSlider(
         {
             if (
                 numberInput.value.trim()
-                !== ""
+                === ""
             )
             {
-                applyWeight(
-                    numberInput.value,
-                    false
-                );
+                return;
             }
+
+            applyWeight(
+                numberInput.value,
+                false
+            );
         }
     );
 
@@ -1187,19 +1314,21 @@ function createWeightSlider(
         function (event)
         {
             if (
-                event.key === "Enter"
+                event.key !== "Enter"
             )
             {
-                event.preventDefault();
-
-                applyWeight(
-                    numberInput.value
-                    || rangeInput.value,
-                    true
-                );
-
-                numberInput.blur();
+                return;
             }
+
+            event.preventDefault();
+
+            applyWeight(
+                numberInput.value
+                || rangeInput.value,
+                true
+            );
+
+            numberInput.blur();
         }
     );
 
@@ -1223,7 +1352,7 @@ function createWeightSlider(
 }
 
 // =====================================================
-// BUILD WEIGHT CONTROLS
+// BUILD INDEX AND FIELD WEIGHT CONTROLS
 // =====================================================
 
 function buildWeightControls()
@@ -1320,7 +1449,7 @@ function buildWeightControls()
 }
 
 // =====================================================
-// INSERT CONTROL BEFORE RESET
+// INSERT CONTROL BEFORE RESET BUTTON
 // =====================================================
 
 function insertControlBeforeReset(
@@ -1341,7 +1470,7 @@ function insertControlBeforeReset(
 }
 
 // =====================================================
-// FUTURE VOLUME FACTOR TOGGLE
+// BUILD FUTURE VOLUME FACTOR TOGGLE
 // =====================================================
 
 function buildFutureVolumeToggle()
@@ -1410,7 +1539,7 @@ function buildFutureVolumeToggle()
 }
 
 // =====================================================
-// CLASSIFICATION SELECTOR
+// BUILD CLASSIFICATION METHOD SELECTOR
 // =====================================================
 
 function buildClassificationToggle()
@@ -1442,7 +1571,7 @@ function buildClassificationToggle()
     options.className =
         "classification-options";
 
-    function addOption(
+    function addClassificationOption(
         value,
         text,
         checked
@@ -1511,7 +1640,7 @@ function buildClassificationToggle()
         );
     }
 
-    addOption(
+    addClassificationOption(
         CLASSIFICATION_METHODS.equalInterval,
         "4 Equal Intervals",
 
@@ -1520,7 +1649,7 @@ function buildClassificationToggle()
         CLASSIFICATION_METHODS.equalInterval
     );
 
-    addOption(
+    addClassificationOption(
         CLASSIFICATION_METHODS.standardDeviation,
         "Standard Deviation",
 
@@ -1540,611 +1669,6 @@ function buildClassificationToggle()
     insertControlBeforeReset(
         container
     );
-}
-
-// =====================================================
-// BASEMAP CALIBRATION UTILITIES
-// =====================================================
-
-function clampNumber(
-    value,
-    minimum,
-    maximum
-)
-{
-    const numericValue =
-        Number(
-            value
-        );
-
-    if (
-        !Number.isFinite(
-            numericValue
-        )
-    )
-    {
-        return null;
-    }
-
-    return Math.min(
-        maximum,
-
-        Math.max(
-            minimum,
-            numericValue
-        )
-    );
-}
-
-function createBasemapCalibrationControl(
-    labelText,
-    propertyName,
-    minimum,
-    maximum,
-    step,
-    decimalPlaces
-)
-{
-    const container =
-        document.createElement(
-            "div"
-        );
-
-    container.className =
-        "slider calibration-slider";
-
-    const label =
-        document.createElement(
-            "label"
-        );
-
-    const labelName =
-        document.createElement(
-            "span"
-        );
-
-    labelName.textContent =
-        labelText;
-
-    const numberInput =
-        document.createElement(
-            "input"
-        );
-
-    numberInput.type =
-        "number";
-
-    numberInput.className =
-        "weight-number calibration-number";
-
-    numberInput.min =
-        String(
-            minimum
-        );
-
-    numberInput.max =
-        String(
-            maximum
-        );
-
-    numberInput.step =
-        String(
-            step
-        );
-
-    numberInput.value =
-        Number(
-            DISPLAY[
-                propertyName
-            ]
-        ).toFixed(
-            decimalPlaces
-        );
-
-    const rangeInput =
-        document.createElement(
-            "input"
-        );
-
-    rangeInput.type =
-        "range";
-
-    rangeInput.min =
-        String(
-            minimum
-        );
-
-    rangeInput.max =
-        String(
-            maximum
-        );
-
-    rangeInput.step =
-        String(
-            step
-        );
-
-    rangeInput.value =
-        String(
-            DISPLAY[
-                propertyName
-            ]
-        );
-
-    function applyValue(
-        value,
-        formatNumberBox
-    )
-    {
-        const clampedValue =
-            clampNumber(
-                value,
-                minimum,
-                maximum
-            );
-
-        if (
-            clampedValue === null
-        )
-        {
-            return;
-        }
-
-        DISPLAY[
-            propertyName
-        ] =
-            clampedValue;
-
-        rangeInput.value =
-            String(
-                clampedValue
-            );
-
-        if (
-            formatNumberBox
-        )
-        {
-            numberInput.value =
-                clampedValue.toFixed(
-                    decimalPlaces
-                );
-        }
-
-        updateBasemapCalibrationReadout();
-        draw();
-    }
-
-    rangeInput.addEventListener(
-        "input",
-        function ()
-        {
-            numberInput.value =
-                Number(
-                    rangeInput.value
-                ).toFixed(
-                    decimalPlaces
-                );
-
-            applyValue(
-                rangeInput.value,
-                false
-            );
-        }
-    );
-
-    numberInput.addEventListener(
-        "input",
-        function ()
-        {
-            if (
-                numberInput.value.trim()
-                !== ""
-            )
-            {
-                applyValue(
-                    numberInput.value,
-                    false
-                );
-            }
-        }
-    );
-
-    numberInput.addEventListener(
-        "blur",
-        function ()
-        {
-            if (
-                numberInput.value.trim()
-                === ""
-                ||
-                clampNumber(
-                    numberInput.value,
-                    minimum,
-                    maximum
-                )
-                === null
-            )
-            {
-                numberInput.value =
-                    Number(
-                        DISPLAY[
-                            propertyName
-                        ]
-                    ).toFixed(
-                        decimalPlaces
-                    );
-
-                return;
-            }
-
-            applyValue(
-                numberInput.value,
-                true
-            );
-        }
-    );
-
-    numberInput.addEventListener(
-        "keydown",
-        function (event)
-        {
-            if (
-                event.key === "Enter"
-            )
-            {
-                event.preventDefault();
-
-                applyValue(
-                    numberInput.value,
-                    true
-                );
-
-                numberInput.blur();
-            }
-        }
-    );
-
-    label.appendChild(
-        labelName
-    );
-
-    label.appendChild(
-        numberInput
-    );
-
-    container.appendChild(
-        label
-    );
-
-    container.appendChild(
-        rangeInput
-    );
-
-    container.rangeInput =
-        rangeInput;
-
-    container.numberInput =
-        numberInput;
-
-    container.propertyName =
-        propertyName;
-
-    container.decimalPlaces =
-        decimalPlaces;
-
-    return container;
-}
-
-// =====================================================
-// CALIBRATION READOUT
-// =====================================================
-
-function getBasemapCalibrationText()
-{
-    return (
-        "basemapShiftX: "
-        + DISPLAY.basemapShiftX.toFixed(0)
-        + ", basemapShiftY: "
-        + DISPLAY.basemapShiftY.toFixed(0)
-        + ", basemapScaleX: "
-        + DISPLAY.basemapScaleX.toFixed(3)
-        + ", basemapScaleY: "
-        + DISPLAY.basemapScaleY.toFixed(3)
-    );
-}
-
-function updateBasemapCalibrationReadout()
-{
-    const readout =
-        document.getElementById(
-            "basemapCalibrationReadout"
-        );
-
-    if (
-        readout
-    )
-    {
-        readout.textContent =
-            getBasemapCalibrationText();
-    }
-}
-
-function copyBasemapCalibrationValues(
-    button
-)
-{
-    const calibrationCode =
-        "basemapShiftX: "
-        + DISPLAY.basemapShiftX.toFixed(0)
-        + ",\n"
-        + "basemapShiftY: "
-        + DISPLAY.basemapShiftY.toFixed(0)
-        + ",\n"
-        + "basemapScaleX: "
-        + DISPLAY.basemapScaleX.toFixed(3)
-        + ",\n"
-        + "basemapScaleY: "
-        + DISPLAY.basemapScaleY.toFixed(3);
-
-    if (
-        navigator.clipboard
-        &&
-        navigator.clipboard.writeText
-    )
-    {
-        navigator.clipboard.writeText(
-            calibrationCode
-        )
-        .then(
-            function ()
-            {
-                const originalText =
-                    button.textContent;
-
-                button.textContent =
-                    "Values Copied";
-
-                window.setTimeout(
-                    function ()
-                    {
-                        button.textContent =
-                            originalText;
-                    },
-                    1500
-                );
-            }
-        )
-        .catch(
-            function ()
-            {
-                window.prompt(
-                    "Copy these basemap values:",
-                    calibrationCode
-                );
-            }
-        );
-    }
-    else
-    {
-        window.prompt(
-            "Copy these basemap values:",
-            calibrationCode
-        );
-    }
-}
-
-// =====================================================
-// BUILD BASEMAP CALIBRATION CONTROLS
-// =====================================================
-
-function buildBasemapCalibrationControls()
-{
-    const panel =
-        document.createElement(
-            "div"
-        );
-
-    panel.className =
-        "classification-control basemap-calibration";
-
-    panel.id =
-        "basemapCalibrationPanel";
-
-    const heading =
-        document.createElement(
-            "div"
-        );
-
-    heading.className =
-        "classification-title";
-
-    heading.textContent =
-        "Basemap and Labels Calibration";
-
-    const instructions =
-        document.createElement(
-            "p"
-        );
-
-    instructions.className =
-        "calibration-instructions";
-
-    instructions.textContent =
-        "These controls move and resize the basemap and labels together while the roadway linework remains fixed.";
-
-    const controls = [
-        createBasemapCalibrationControl(
-            "Horizontal Position",
-            "basemapShiftX",
-            BASEMAP_CONTROL_SETTINGS.shiftMinimum,
-            BASEMAP_CONTROL_SETTINGS.shiftMaximum,
-            BASEMAP_CONTROL_SETTINGS.shiftStep,
-            0
-        ),
-
-        createBasemapCalibrationControl(
-            "Vertical Position",
-            "basemapShiftY",
-            BASEMAP_CONTROL_SETTINGS.shiftMinimum,
-            BASEMAP_CONTROL_SETTINGS.shiftMaximum,
-            BASEMAP_CONTROL_SETTINGS.shiftStep,
-            0
-        ),
-
-        createBasemapCalibrationControl(
-            "Horizontal Scale",
-            "basemapScaleX",
-            BASEMAP_CONTROL_SETTINGS.scaleMinimum,
-            BASEMAP_CONTROL_SETTINGS.scaleMaximum,
-            BASEMAP_CONTROL_SETTINGS.scaleStep,
-            3
-        ),
-
-        createBasemapCalibrationControl(
-            "Vertical Scale",
-            "basemapScaleY",
-            BASEMAP_CONTROL_SETTINGS.scaleMinimum,
-            BASEMAP_CONTROL_SETTINGS.scaleMaximum,
-            BASEMAP_CONTROL_SETTINGS.scaleStep,
-            3
-        )
-    ];
-
-    const readout =
-        document.createElement(
-            "div"
-        );
-
-    readout.id =
-        "basemapCalibrationReadout";
-
-    readout.className =
-        "calibration-readout";
-
-    const buttonRow =
-        document.createElement(
-            "div"
-        );
-
-    buttonRow.className =
-        "calibration-buttons";
-
-    const resetCalibrationButton =
-        document.createElement(
-            "button"
-        );
-
-    resetCalibrationButton.type =
-        "button";
-
-    resetCalibrationButton.className =
-        "secondary-button";
-
-    resetCalibrationButton.textContent =
-        "Reset Images";
-
-    const copyValuesButton =
-        document.createElement(
-            "button"
-        );
-
-    copyValuesButton.type =
-        "button";
-
-    copyValuesButton.textContent =
-        "Copy Values";
-
-    resetCalibrationButton.addEventListener(
-        "click",
-        function ()
-        {
-            DISPLAY.basemapShiftX =
-                0;
-
-            DISPLAY.basemapShiftY =
-                0;
-
-            DISPLAY.basemapScaleX =
-                1;
-
-            DISPLAY.basemapScaleY =
-                1;
-
-            controls.forEach(
-                function (control)
-                {
-                    const value =
-                        DISPLAY[
-                            control.propertyName
-                        ];
-
-                    control.rangeInput.value =
-                        String(
-                            value
-                        );
-
-                    control.numberInput.value =
-                        Number(
-                            value
-                        ).toFixed(
-                            control.decimalPlaces
-                        );
-                }
-            );
-
-            updateBasemapCalibrationReadout();
-            draw();
-        }
-    );
-
-    copyValuesButton.addEventListener(
-        "click",
-        function ()
-        {
-            copyBasemapCalibrationValues(
-                copyValuesButton
-            );
-        }
-    );
-
-    buttonRow.appendChild(
-        resetCalibrationButton
-    );
-
-    buttonRow.appendChild(
-        copyValuesButton
-    );
-
-    panel.appendChild(
-        heading
-    );
-
-    panel.appendChild(
-        instructions
-    );
-
-    controls.forEach(
-        function (control)
-        {
-            panel.appendChild(
-                control
-            );
-        }
-    );
-
-    panel.appendChild(
-        readout
-    );
-
-    panel.appendChild(
-        buttonRow
-    );
-
-    insertControlBeforeReset(
-        panel
-    );
-
-    updateBasemapCalibrationReadout();
 }
 
 // =====================================================
@@ -2243,7 +1767,7 @@ function createSegmentPath(
 }
 
 // =====================================================
-// DRAW IMAGE USING CALIBRATED FRAME
+// DRAW IMAGE USING FIXED IMAGE FRAME
 // =====================================================
 
 function drawImageToAdjustedFrame(
@@ -2300,12 +1824,18 @@ function draw()
         height
     );
 
-    // Draw the main basemap first.
+    /*
+    Drawing order:
+
+    1. Main basemap
+    2. Scored roadway linework
+    3. Transparent labels overlay
+    */
+
     drawImageToAdjustedFrame(
         basemap
     );
 
-    // Draw roadway lines above the basemap.
     if (
         state.indices.length === 0
         ||
@@ -2356,7 +1886,12 @@ function draw()
         );
     }
 
-    // Draw the transparent labels overlay last.
+    /*
+    Labels.png is drawn last so labels appear above the
+    roadway linework. The image must have a transparent
+    background.
+    */
+
     drawImageToAdjustedFrame(
         labelsOverlay
     );
@@ -2417,7 +1952,6 @@ Promise.all([
         buildWeightControls();
         buildFutureVolumeToggle();
         buildClassificationToggle();
-        buildBasemapCalibrationControls();
         recalculateScores();
         resizeCanvas();
     }
