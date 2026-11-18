@@ -20,7 +20,7 @@ const EXT = {
 
 // Raw GitHub URL for the basemap image.
 const BASEMAP =
-    "https://raw.githubusercontent.com/JSMITHHDR/US-83/a12a6ef617c4dc9167713261bd20994c956ec0ea/BasemapT1.png";
+    "https://raw.githubusercontent.com/JSMITHHDR/US-83/97370a044e4c2790fa21e932e18768bd5d9cc448/Texas%20with%20Study%20Area%20Narrow.png";
 
 // =====================================================
 // FIXED DISPLAY SETTINGS
