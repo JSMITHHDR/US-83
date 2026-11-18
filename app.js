@@ -1,10 +1,10 @@
 // =====================================================
 // US 83 NEED INDEX EXPLORER
-// VERSION 5.3
+// VERSION 5.4
 // =====================================================
 
 console.log(
-    "US 83 Need Index Explorer version 5.3"
+    "US 83 Need Index Explorer version 5.4"
 );
 
 // =====================================================
@@ -12,10 +12,10 @@ console.log(
 // =====================================================
 
 const EXT = {
-    west: -103.35621513299998,
-    east: -96.94012402599998,
-    south: 25.688973076000025,
-    north: 36.796656057000064
+    west: -103.356215,
+    east: -96.940124,
+    south: 25.684963,
+    north: 36.796656
 };
 
 // Raw GitHub URL for the basemap image.
@@ -23,18 +23,42 @@ const BASEMAP =
     "https://raw.githubusercontent.com/JSMITHHDR/US-83/5165469a29e097b35ddc90d6901b971ff3d13df0/State%20Narrow.png";
 
 // =====================================================
-// FIXED DISPLAY SETTINGS
+// DISPLAY SETTINGS
 // =====================================================
 
 const DISPLAY = {
-    // Horizontal basemap adjustment.
+    /*
+    Temporary basemap calibration values.
+
+    Shift values are measured in screen pixels.
+
+    Scale values are multipliers:
+    1.000 = original size
+    0.990 = 1 percent smaller
+    1.010 = 1 percent larger
+    */
+
     basemapShiftX: 0,
+    basemapShiftY: 0,
+    basemapScaleX: 1,
+    basemapScaleY: 1,
 
-    // Negative values move the basemap upward.
-    basemapShiftY: -7.5,
-
-    // Fixed line thickness.
+    // Fixed roadway line thickness.
     lineWidth: 8
+};
+
+// =====================================================
+// BASEMAP CALIBRATION LIMITS
+// =====================================================
+
+const BASEMAP_CONTROL_SETTINGS = {
+    shiftMinimum: -250,
+    shiftMaximum: 250,
+    shiftStep: 1,
+
+    scaleMinimum: 0.5,
+    scaleMaximum: 1.5,
+    scaleStep: 0.001
 };
 
 // =====================================================
@@ -87,7 +111,7 @@ const state = {
     // Final combined Need Index by Segment ID.
     scores: new Map(),
 
-    // Current color-class assignment by Segment ID.
+    // Current color class by Segment ID.
     colorClasses: new Map(),
 
     // Main index-level weights.
@@ -96,17 +120,17 @@ const state = {
     // Individual field weights.
     fieldW: {},
 
-    // Controls whether the Future Volume Factor is used.
+    // Controls whether Future Volume Factor is applied.
     useFutureVolumeFactor: true,
 
     // Default map classification method.
     classificationMethod:
         CLASSIFICATION_METHODS.equalInterval,
 
-    // Three calculated boundaries create four classes.
+    // Three boundaries used to create four classes.
     classBreaks: [],
 
-    // Current statistics for the combined scores.
+    // Statistics for the current combined scores.
     classificationStatistics: {
         minimum: 0,
         maximum: 0,
@@ -194,13 +218,6 @@ function mapFrame()
         EXT.north
         - EXT.south;
 
-    /*
-    Use one common scale for both dimensions.
-
-    This keeps the basemap and linework from being
-    independently stretched.
-    */
-
     const scale =
         Math.min(
             canvasWidth / extentWidth,
@@ -278,6 +295,71 @@ function project(
 }
 
 // =====================================================
+// CALCULATE ADJUSTED BASEMAP FRAME
+// =====================================================
+
+function adjustedBasemapFrame()
+{
+    const frame =
+        mapFrame();
+
+    const adjustedWidth =
+        frame.width
+        * DISPLAY.basemapScaleX;
+
+    const adjustedHeight =
+        frame.height
+        * DISPLAY.basemapScaleY;
+
+    /*
+    Scaling is performed around the center of the original
+    basemap frame.
+
+    This means increasing Scale X expands the image equally
+    toward the left and right.
+
+    Increasing Scale Y expands the image equally toward the
+    top and bottom.
+    */
+
+    const adjustedX =
+        frame.x
+        -
+        (
+            adjustedWidth
+            - frame.width
+        )
+        / 2
+        +
+        DISPLAY.basemapShiftX;
+
+    const adjustedY =
+        frame.y
+        -
+        (
+            adjustedHeight
+            - frame.height
+        )
+        / 2
+        +
+        DISPLAY.basemapShiftY;
+
+    return {
+        x:
+            adjustedX,
+
+        y:
+            adjustedY,
+
+        width:
+            adjustedWidth,
+
+        height:
+            adjustedHeight
+    };
+}
+
+// =====================================================
 // TOTAL ACTIVE INDEX WEIGHT
 // =====================================================
 
@@ -310,14 +392,6 @@ function activeIndexWeightTotal()
 // =====================================================
 // SAFE NUMERIC VALUE
 // =====================================================
-
-/*
-This reproduces the Excel expression:
-
-IF(cell="",0,cell)
-
-Blank, missing, and nonnumeric values become zero.
-*/
 
 function safeNumber(
     value
@@ -400,11 +474,6 @@ function calculateRawIndexScore(
 // =====================================================
 // NORMALIZE ONE INDEX AGAINST ITS PEAK
 // =====================================================
-
-/*
-Each index is normalized independently by dividing each
-segment's raw score by the maximum raw score for the index.
-*/
 
 function calculateNormalizedIndexScores(
     index
@@ -543,11 +612,6 @@ function calculateScoreStatistics(
         total
         / scores.length;
 
-    /*
-    Population standard deviation is used because the
-    scores represent the complete displayed segment set.
-    */
-
     const variance =
         scores.reduce(
             function (
@@ -560,7 +624,8 @@ function calculateScoreStatistics(
                     - mean;
 
                 return sum
-                    + difference
+                    +
+                    difference
                     * difference;
             },
             0
@@ -599,11 +664,6 @@ function buildEqualIntervalBreaks(
         statistics.maximum
         - statistics.minimum;
 
-    /*
-    If every segment has the same score, all three
-    boundaries use that score.
-    */
-
     if (
         range <= 0
     )
@@ -641,13 +701,6 @@ function buildStandardDeviationBreaks(
     statistics
 )
 {
-    /*
-    Class 1: score <= mean - 1 standard deviation
-    Class 2: score > mean - 1 SD through mean
-    Class 3: score > mean through mean + 1 SD
-    Class 4: score > mean + 1 standard deviation
-    */
-
     return [
         statistics.mean
             - statistics.standardDeviation,
@@ -806,11 +859,6 @@ function recalculateScores()
     state.colorClasses.clear();
     state.classBreaks = [];
 
-    /*
-    If every main index weight is zero, do not display
-    roadway segments.
-    */
-
     if (
         activeIndexWeightTotal() <= 0
     )
@@ -836,11 +884,6 @@ function recalculateScores()
                 );
         }
     );
-
-    /*
-    Combine the normalized indexes using the main
-    index-level weights.
-    */
 
     state.segments.forEach(
         function (segment)
@@ -889,11 +932,6 @@ function recalculateScores()
             {
                 return;
             }
-
-            /*
-            Divide by the total active index weight so
-            relative weighting controls the result.
-            */
 
             const combinedScore =
                 combinedWeightedTotal
@@ -1063,7 +1101,6 @@ function createWeightSlider(
     labelName.textContent =
         labelText;
 
-    // Editable numeric weight box.
     const numberInput =
         document.createElement(
             "input"
@@ -1113,7 +1150,6 @@ function createWeightSlider(
         numberInput
     );
 
-    // Range slider.
     const rangeInput =
         document.createElement(
             "input"
@@ -1146,11 +1182,6 @@ function createWeightSlider(
         "aria-label",
         labelText + " slider"
     );
-
-    /*
-    Apply a valid entered weight to the number box,
-    slider, application state, and map.
-    */
 
     function applyWeight(
         value
@@ -1185,10 +1216,6 @@ function createWeightSlider(
         return true;
     }
 
-    /*
-    Moving the slider updates the number box.
-    */
-
     rangeInput.addEventListener(
         "input",
         function ()
@@ -1215,13 +1242,6 @@ function createWeightSlider(
             );
         }
     );
-
-    /*
-    Typing a valid number updates the slider and map.
-
-    The box is not reformatted until the user presses
-    Enter or leaves the box.
-    */
 
     numberInput.addEventListener(
         "input",
@@ -1257,11 +1277,6 @@ function createWeightSlider(
         }
     );
 
-    /*
-    Validate and format the number when the user leaves
-    the number box.
-    */
-
     numberInput.addEventListener(
         "blur",
         function ()
@@ -1289,10 +1304,6 @@ function createWeightSlider(
             );
         }
     );
-
-    /*
-    Pressing Enter applies and formats the typed value.
-    */
 
     numberInput.addEventListener(
         "keydown",
@@ -1355,7 +1366,6 @@ function buildWeightControls()
     state.indices.forEach(
         function (index)
         {
-            // Equal default index weight.
             state.indexW[
                 index.id
             ] =
@@ -1384,7 +1394,6 @@ function buildWeightControls()
                 indexSlider
             );
 
-            // Expandable field controls.
             const details =
                 document.createElement(
                     "details"
@@ -1405,7 +1414,6 @@ function buildWeightControls()
             index.fields.forEach(
                 function (field)
                 {
-                    // Equal default field weight.
                     state.fieldW[
                         index.id
                     ][field] =
@@ -1502,17 +1510,9 @@ function buildFutureVolumeToggle()
         label
     );
 
-    if (
-        resetButton
-        &&
-        resetButton.parentNode
-    )
-    {
-        resetButton.parentNode.insertBefore(
-            container,
-            resetButton
-        );
-    }
+    insertControlBeforeReset(
+        container
+    );
 }
 
 // =====================================================
@@ -1548,7 +1548,6 @@ function buildClassificationToggle()
     options.className =
         "classification-options";
 
-    // Equal interval option.
     const equalIntervalLabel =
         document.createElement(
             "label"
@@ -1589,7 +1588,6 @@ function buildClassificationToggle()
         equalIntervalText
     );
 
-    // Standard deviation option.
     const standardDeviationLabel =
         document.createElement(
             "label"
@@ -1686,6 +1684,19 @@ function buildClassificationToggle()
         options
     );
 
+    insertControlBeforeReset(
+        container
+    );
+}
+
+// =====================================================
+// INSERT CONTROL BEFORE RESET BUTTON
+// =====================================================
+
+function insertControlBeforeReset(
+    control
+)
+{
     if (
         resetButton
         &&
@@ -1693,10 +1704,649 @@ function buildClassificationToggle()
     )
     {
         resetButton.parentNode.insertBefore(
-            container,
+            control,
             resetButton
         );
     }
+}
+
+// =====================================================
+// CLAMP A NUMBER
+// =====================================================
+
+function clampNumber(
+    value,
+    minimum,
+    maximum
+)
+{
+    const numericValue =
+        Number(
+            value
+        );
+
+    if (
+        !Number.isFinite(
+            numericValue
+        )
+    )
+    {
+        return null;
+    }
+
+    return Math.min(
+        maximum,
+        Math.max(
+            minimum,
+            numericValue
+        )
+    );
+}
+
+// =====================================================
+// CREATE BASEMAP CALIBRATION CONTROL
+// =====================================================
+
+function createBasemapCalibrationControl(
+    labelText,
+    propertyName,
+    minimum,
+    maximum,
+    step,
+    decimalPlaces
+)
+{
+    const container =
+        document.createElement(
+            "div"
+        );
+
+    container.className =
+        "slider calibration-slider";
+
+    const label =
+        document.createElement(
+            "label"
+        );
+
+    const labelName =
+        document.createElement(
+            "span"
+        );
+
+    labelName.textContent =
+        labelText;
+
+    const numberInput =
+        document.createElement(
+            "input"
+        );
+
+    numberInput.type =
+        "number";
+
+    numberInput.className =
+        "weight-number calibration-number";
+
+    numberInput.min =
+        String(
+            minimum
+        );
+
+    numberInput.max =
+        String(
+            maximum
+        );
+
+    numberInput.step =
+        String(
+            step
+        );
+
+    numberInput.value =
+        Number(
+            DISPLAY[
+                propertyName
+            ]
+        ).toFixed(
+            decimalPlaces
+        );
+
+    numberInput.setAttribute(
+        "aria-label",
+        labelText
+    );
+
+    const rangeInput =
+        document.createElement(
+            "input"
+        );
+
+    rangeInput.type =
+        "range";
+
+    rangeInput.min =
+        String(
+            minimum
+        );
+
+    rangeInput.max =
+        String(
+            maximum
+        );
+
+    rangeInput.step =
+        String(
+            step
+        );
+
+    rangeInput.value =
+        String(
+            DISPLAY[
+                propertyName
+            ]
+        );
+
+    rangeInput.setAttribute(
+        "aria-label",
+        labelText + " slider"
+    );
+
+    function applyValue(
+        value,
+        formatNumberBox
+    )
+    {
+        const clampedValue =
+            clampNumber(
+                value,
+                minimum,
+                maximum
+            );
+
+        if (
+            clampedValue === null
+        )
+        {
+            return;
+        }
+
+        DISPLAY[
+            propertyName
+        ] =
+            clampedValue;
+
+        rangeInput.value =
+            String(
+                clampedValue
+            );
+
+        if (
+            formatNumberBox
+        )
+        {
+            numberInput.value =
+                clampedValue.toFixed(
+                    decimalPlaces
+                );
+        }
+
+        updateBasemapCalibrationReadout();
+        draw();
+    }
+
+    rangeInput.addEventListener(
+        "input",
+        function ()
+        {
+            numberInput.value =
+                Number(
+                    rangeInput.value
+                ).toFixed(
+                    decimalPlaces
+                );
+
+            applyValue(
+                rangeInput.value,
+                false
+            );
+        }
+    );
+
+    numberInput.addEventListener(
+        "input",
+        function ()
+        {
+            if (
+                numberInput.value.trim() === ""
+            )
+            {
+                return;
+            }
+
+            applyValue(
+                numberInput.value,
+                false
+            );
+        }
+    );
+
+    numberInput.addEventListener(
+        "blur",
+        function ()
+        {
+            if (
+                numberInput.value.trim() === ""
+                ||
+                clampNumber(
+                    numberInput.value,
+                    minimum,
+                    maximum
+                ) === null
+            )
+            {
+                numberInput.value =
+                    Number(
+                        DISPLAY[
+                            propertyName
+                        ]
+                    ).toFixed(
+                        decimalPlaces
+                    );
+
+                return;
+            }
+
+            applyValue(
+                numberInput.value,
+                true
+            );
+        }
+    );
+
+    numberInput.addEventListener(
+        "keydown",
+        function (event)
+        {
+            if (
+                event.key !== "Enter"
+            )
+            {
+                return;
+            }
+
+            event.preventDefault();
+
+            applyValue(
+                numberInput.value,
+                true
+            );
+
+            numberInput.blur();
+        }
+    );
+
+    label.appendChild(
+        labelName
+    );
+
+    label.appendChild(
+        numberInput
+    );
+
+    container.appendChild(
+        label
+    );
+
+    container.appendChild(
+        rangeInput
+    );
+
+    /*
+    Save references so the calibration reset button can
+    update the controls without reloading the page.
+    */
+
+    container.rangeInput =
+        rangeInput;
+
+    container.numberInput =
+        numberInput;
+
+    container.propertyName =
+        propertyName;
+
+    container.decimalPlaces =
+        decimalPlaces;
+
+    return container;
+}
+
+// =====================================================
+// BASEMAP CALIBRATION READOUT
+// =====================================================
+
+function getBasemapCalibrationText()
+{
+    return (
+        "basemapShiftX: "
+        + DISPLAY.basemapShiftX.toFixed(0)
+        + ", basemapShiftY: "
+        + DISPLAY.basemapShiftY.toFixed(0)
+        + ", basemapScaleX: "
+        + DISPLAY.basemapScaleX.toFixed(3)
+        + ", basemapScaleY: "
+        + DISPLAY.basemapScaleY.toFixed(3)
+    );
+}
+
+function updateBasemapCalibrationReadout()
+{
+    const readout =
+        document.getElementById(
+            "basemapCalibrationReadout"
+        );
+
+    if (
+        !readout
+    )
+    {
+        return;
+    }
+
+    readout.textContent =
+        getBasemapCalibrationText();
+}
+
+// =====================================================
+// COPY BASEMAP CALIBRATION VALUES
+// =====================================================
+
+function copyBasemapCalibrationValues(
+    button
+)
+{
+    const calibrationCode =
+        "basemapShiftX: "
+        + DISPLAY.basemapShiftX.toFixed(0)
+        + ",\n"
+        + "basemapShiftY: "
+        + DISPLAY.basemapShiftY.toFixed(0)
+        + ",\n"
+        + "basemapScaleX: "
+        + DISPLAY.basemapScaleX.toFixed(3)
+        + ",\n"
+        + "basemapScaleY: "
+        + DISPLAY.basemapScaleY.toFixed(3);
+
+    if (
+        navigator.clipboard
+        &&
+        navigator.clipboard.writeText
+    )
+    {
+        navigator.clipboard.writeText(
+            calibrationCode
+        )
+        .then(
+            function ()
+            {
+                const originalText =
+                    button.textContent;
+
+                button.textContent =
+                    "Values Copied";
+
+                window.setTimeout(
+                    function ()
+                    {
+                        button.textContent =
+                            originalText;
+                    },
+                    1500
+                );
+            }
+        )
+        .catch(
+            function ()
+            {
+                window.prompt(
+                    "Copy these basemap values:",
+                    calibrationCode
+                );
+            }
+        );
+
+        return;
+    }
+
+    window.prompt(
+        "Copy these basemap values:",
+        calibrationCode
+    );
+}
+
+// =====================================================
+// BUILD BASEMAP CALIBRATION CONTROLS
+// =====================================================
+
+function buildBasemapCalibrationControls()
+{
+    const panel =
+        document.createElement(
+            "div"
+        );
+
+    panel.className =
+        "classification-control basemap-calibration";
+
+    panel.id =
+        "basemapCalibrationPanel";
+
+    const heading =
+        document.createElement(
+            "div"
+        );
+
+    heading.className =
+        "classification-title";
+
+    heading.textContent =
+        "Basemap Calibration";
+
+    const instructions =
+        document.createElement(
+            "p"
+        );
+
+    instructions.className =
+        "calibration-instructions";
+
+    instructions.textContent =
+        "Adjust the image until the basemap aligns with the roadway linework.";
+
+    const shiftXControl =
+        createBasemapCalibrationControl(
+            "Horizontal Position",
+            "basemapShiftX",
+            BASEMAP_CONTROL_SETTINGS.shiftMinimum,
+            BASEMAP_CONTROL_SETTINGS.shiftMaximum,
+            BASEMAP_CONTROL_SETTINGS.shiftStep,
+            0
+        );
+
+    const shiftYControl =
+        createBasemapCalibrationControl(
+            "Vertical Position",
+            "basemapShiftY",
+            BASEMAP_CONTROL_SETTINGS.shiftMinimum,
+            BASEMAP_CONTROL_SETTINGS.shiftMaximum,
+            BASEMAP_CONTROL_SETTINGS.shiftStep,
+            0
+        );
+
+    const scaleXControl =
+        createBasemapCalibrationControl(
+            "Horizontal Scale",
+            "basemapScaleX",
+            BASEMAP_CONTROL_SETTINGS.scaleMinimum,
+            BASEMAP_CONTROL_SETTINGS.scaleMaximum,
+            BASEMAP_CONTROL_SETTINGS.scaleStep,
+            3
+        );
+
+    const scaleYControl =
+        createBasemapCalibrationControl(
+            "Vertical Scale",
+            "basemapScaleY",
+            BASEMAP_CONTROL_SETTINGS.scaleMinimum,
+            BASEMAP_CONTROL_SETTINGS.scaleMaximum,
+            BASEMAP_CONTROL_SETTINGS.scaleStep,
+            3
+        );
+
+    const readout =
+        document.createElement(
+            "div"
+        );
+
+    readout.id =
+        "basemapCalibrationReadout";
+
+    readout.className =
+        "calibration-readout";
+
+    const buttonRow =
+        document.createElement(
+            "div"
+        );
+
+    buttonRow.className =
+        "calibration-buttons";
+
+    const resetCalibrationButton =
+        document.createElement(
+            "button"
+        );
+
+    resetCalibrationButton.type =
+        "button";
+
+    resetCalibrationButton.className =
+        "secondary-button";
+
+    resetCalibrationButton.textContent =
+        "Reset Basemap";
+
+    const copyValuesButton =
+        document.createElement(
+            "button"
+        );
+
+    copyValuesButton.type =
+        "button";
+
+    copyValuesButton.textContent =
+        "Copy Values";
+
+    const calibrationControls = [
+        shiftXControl,
+        shiftYControl,
+        scaleXControl,
+        scaleYControl
+    ];
+
+    resetCalibrationButton.addEventListener(
+        "click",
+        function ()
+        {
+            DISPLAY.basemapShiftX = 0;
+            DISPLAY.basemapShiftY = 0;
+            DISPLAY.basemapScaleX = 1;
+            DISPLAY.basemapScaleY = 1;
+
+            calibrationControls.forEach(
+                function (control)
+                {
+                    const value =
+                        DISPLAY[
+                            control.propertyName
+                        ];
+
+                    control.rangeInput.value =
+                        String(
+                            value
+                        );
+
+                    control.numberInput.value =
+                        Number(
+                            value
+                        ).toFixed(
+                            control.decimalPlaces
+                        );
+                }
+            );
+
+            updateBasemapCalibrationReadout();
+            draw();
+        }
+    );
+
+    copyValuesButton.addEventListener(
+        "click",
+        function ()
+        {
+            copyBasemapCalibrationValues(
+                copyValuesButton
+            );
+        }
+    );
+
+    buttonRow.appendChild(
+        resetCalibrationButton
+    );
+
+    buttonRow.appendChild(
+        copyValuesButton
+    );
+
+    panel.appendChild(
+        heading
+    );
+
+    panel.appendChild(
+        instructions
+    );
+
+    panel.appendChild(
+        shiftXControl
+    );
+
+    panel.appendChild(
+        shiftYControl
+    );
+
+    panel.appendChild(
+        scaleXControl
+    );
+
+    panel.appendChild(
+        scaleYControl
+    );
+
+    panel.appendChild(
+        readout
+    );
+
+    panel.appendChild(
+        buttonRow
+    );
+
+    insertControlBeforeReset(
+        panel
+    );
+
+    updateBasemapCalibrationReadout();
 }
 
 // =====================================================
@@ -1823,12 +2473,11 @@ function draw()
         height
     );
 
-    const frame =
-        mapFrame();
-
     /*
-    Draw the basemap with the fixed vertical adjustment.
-    The roadway linework remains fixed.
+    The basemap is adjusted independently from the linework.
+
+    The roadway linework continues to use the original map
+    frame so it remains fixed while the image is calibrated.
     */
 
     if (
@@ -1837,24 +2486,17 @@ function draw()
         basemap.naturalWidth > 0
     )
     {
+        const basemapFrame =
+            adjustedBasemapFrame();
+
         ctx.drawImage(
             basemap,
-
-            frame.x
-                + DISPLAY.basemapShiftX,
-
-            frame.y
-                + DISPLAY.basemapShiftY,
-
-            frame.width,
-            frame.height
+            basemapFrame.x,
+            basemapFrame.y,
+            basemapFrame.width,
+            basemapFrame.height
         );
     }
-
-    /*
-    Do not draw roadway lines when every main index
-    weight is zero.
-    */
 
     if (
         state.indices.length > 0
@@ -1895,11 +2537,6 @@ function draw()
             createSegmentPath(
                 segment
             );
-
-            /*
-            Use one colored stroke only.
-            No casing or outline is applied.
-            */
 
             ctx.strokeStyle =
                 getClassColor(
@@ -1969,6 +2606,8 @@ Promise.all([
         buildWeightControls();
         buildFutureVolumeToggle();
         buildClassificationToggle();
+        buildBasemapCalibrationControls();
+
         recalculateScores();
         resizeCanvas();
     }
@@ -1989,7 +2628,7 @@ Promise.all([
 );
 
 // =====================================================
-// RESET WEIGHTS
+// RESET APPLICATION
 // =====================================================
 
 resetButton.addEventListener(
