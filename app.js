@@ -1,10 +1,10 @@
 // =====================================================
 // US 83 NEED INDEX EXPLORER
-// VERSION 5.2
+// VERSION 5.3
 // =====================================================
 
 console.log(
-    "US 83 Need Index Explorer version 5.2"
+    "US 83 Need Index Explorer version 5.3"
 );
 
 // =====================================================
@@ -38,46 +38,43 @@ const DISPLAY = {
 };
 
 // =====================================================
-// FIXED COLOR RANGES
+// COLOR AND CLASSIFICATION SETTINGS
 // =====================================================
-
-/*
-The colors represent fixed combined Need Index ranges.
-
-These ranges do not change when the sliders move:
-
-0.00 through 0.25 = Green
-Greater than 0.25 through 0.50 = Yellow
-Greater than 0.50 through 0.75 = Orange
-Greater than 0.75 = Red
-*/
 
 const COLOR_CLASSES = [
     {
-        minimum: 0.00,
-        maximum: 0.25,
-        label: "0.00 - 0.25",
+        label: "Class 1",
         color: "#38A800"
     },
     {
-        minimum: 0.25,
-        maximum: 0.50,
-        label: "&gt;0.25 - 0.50",
+        label: "Class 2",
         color: "#FFFF00"
     },
     {
-        minimum: 0.50,
-        maximum: 0.75,
-        label: "&gt;0.50 - 0.75",
+        label: "Class 3",
         color: "#E69800"
     },
     {
-        minimum: 0.75,
-        maximum: Infinity,
-        label: "&gt;0.75",
+        label: "Class 4",
         color: "#FF0000"
     }
 ];
+
+const CLASSIFICATION_METHODS = {
+    equalInterval: "equalInterval",
+    standardDeviation: "standardDeviation"
+};
+
+// =====================================================
+// WEIGHT CONTROL SETTINGS
+// =====================================================
+
+const WEIGHT_SETTINGS = {
+    minimum: 0,
+    maximum: 5,
+    step: 0.1,
+    defaultValue: 1
+};
 
 // =====================================================
 // APPLICATION STATE
@@ -90,17 +87,32 @@ const state = {
     // Final combined Need Index by Segment ID.
     scores: new Map(),
 
-    // Fixed color-class assignment by Segment ID.
+    // Current color-class assignment by Segment ID.
     colorClasses: new Map(),
 
-    // Main index-level slider weights.
+    // Main index-level weights.
     indexW: {},
 
-    // Individual field slider weights.
+    // Individual field weights.
     fieldW: {},
 
     // Controls whether the Future Volume Factor is used.
-    useFutureVolumeFactor: true
+    useFutureVolumeFactor: true,
+
+    // Default map classification method.
+    classificationMethod:
+        CLASSIFICATION_METHODS.equalInterval,
+
+    // Three calculated boundaries create four classes.
+    classBreaks: [],
+
+    // Current statistics for the combined scores.
+    classificationStatistics: {
+        minimum: 0,
+        maximum: 0,
+        mean: 0,
+        standardDeviation: 0
+    }
 };
 
 // =====================================================
@@ -153,13 +165,14 @@ basemap.src =
 basemap.onload =
     draw;
 
-basemap.onerror = function ()
-{
-    statusEl.textContent +=
-        " Basemap could not load. Verify that the GitHub image is publicly accessible.";
+basemap.onerror =
+    function ()
+    {
+        statusEl.textContent +=
+            " Basemap could not load. Verify that the GitHub image is publicly accessible.";
 
-    draw();
-};
+        draw();
+    };
 
 // =====================================================
 // ASPECT-PRESERVING MAP FRAME
@@ -322,7 +335,9 @@ function safeNumber(
     }
 
     const numericValue =
-        Number(value);
+        Number(
+            value
+        );
 
     return Number.isFinite(
         numericValue
@@ -334,30 +349,6 @@ function safeNumber(
 // =====================================================
 // RAW SCORE FOR ONE SEGMENT AND ONE INDEX
 // =====================================================
-
-/*
-When the Future Volume Factor toggle is on, this reproduces:
-
-(
-    Field1 * Weight1
-    + Field2 * Weight2
-    + ...
-)
-* FutureVolumeFactor
-
-When the toggle is off, it reproduces:
-
-(
-    Field1 * Weight1
-    + Field2 * Weight2
-    + ...
-)
-
-The weighted fields are summed directly.
-
-The script does not divide by the sum of the field weights,
-and it does not normalize the individual fields.
-*/
 
 function calculateRawIndexScore(
     row,
@@ -411,18 +402,8 @@ function calculateRawIndexScore(
 // =====================================================
 
 /*
-This reproduces the spreadsheet logic:
-
-peak = MAX(scores)
-
-normalized score =
-    IF(
-        peak = 0,
-        0,
-        segment raw score / peak
-    )
-
-Each index is normalized independently.
+Each index is normalized independently by dividing each
+segment's raw score by the maximum raw score for the index.
 */
 
 function calculateNormalizedIndexScores(
@@ -434,7 +415,6 @@ function calculateNormalizedIndexScores(
 
     let peakScore = 0;
 
-    // First pass: calculate raw scores and find the peak.
     state.segments.forEach(
         function (segment)
         {
@@ -467,7 +447,6 @@ function calculateNormalizedIndexScores(
     const normalizedScores =
         new Map();
 
-    // Second pass: divide each raw score by the peak.
     state.segments.forEach(
         function (segment)
         {
@@ -500,33 +479,260 @@ function calculateNormalizedIndexScores(
 }
 
 // =====================================================
-// GET FIXED COLOR CLASS
+// GET FINITE SCORES
 // =====================================================
 
-function getFixedColorClass(
-    score
+function getFiniteScores()
+{
+    return Array.from(
+        state.scores.values()
+    ).filter(
+        function (score)
+        {
+            return Number.isFinite(
+                score
+            );
+        }
+    );
+}
+
+// =====================================================
+// CALCULATE SCORE STATISTICS
+// =====================================================
+
+function calculateScoreStatistics(
+    scores
+)
+{
+    if (
+        scores.length === 0
+    )
+    {
+        return {
+            minimum: 0,
+            maximum: 0,
+            mean: 0,
+            standardDeviation: 0
+        };
+    }
+
+    const minimum =
+        Math.min(
+            ...scores
+        );
+
+    const maximum =
+        Math.max(
+            ...scores
+        );
+
+    const total =
+        scores.reduce(
+            function (
+                sum,
+                score
+            )
+            {
+                return sum
+                    + score;
+            },
+            0
+        );
+
+    const mean =
+        total
+        / scores.length;
+
+    /*
+    Population standard deviation is used because the
+    scores represent the complete displayed segment set.
+    */
+
+    const variance =
+        scores.reduce(
+            function (
+                sum,
+                score
+            )
+            {
+                const difference =
+                    score
+                    - mean;
+
+                return sum
+                    + difference
+                    * difference;
+            },
+            0
+        )
+        / scores.length;
+
+    const standardDeviation =
+        Math.sqrt(
+            variance
+        );
+
+    return {
+        minimum:
+            minimum,
+
+        maximum:
+            maximum,
+
+        mean:
+            mean,
+
+        standardDeviation:
+            standardDeviation
+    };
+}
+
+// =====================================================
+// BUILD FOUR EQUAL-INTERVAL BREAKS
+// =====================================================
+
+function buildEqualIntervalBreaks(
+    statistics
+)
+{
+    const range =
+        statistics.maximum
+        - statistics.minimum;
+
+    /*
+    If every segment has the same score, all three
+    boundaries use that score.
+    */
+
+    if (
+        range <= 0
+    )
+    {
+        return [
+            statistics.maximum,
+            statistics.maximum,
+            statistics.maximum
+        ];
+    }
+
+    const interval =
+        range
+        / 4;
+
+    return [
+        statistics.minimum
+            + interval,
+
+        statistics.minimum
+            + interval
+            * 2,
+
+        statistics.minimum
+            + interval
+            * 3
+    ];
+}
+
+// =====================================================
+// BUILD STANDARD-DEVIATION BREAKS
+// =====================================================
+
+function buildStandardDeviationBreaks(
+    statistics
 )
 {
     /*
-    Explicit boundary handling:
-
-    0.25 stays green.
-    0.50 stays yellow.
-    0.75 stays orange.
-    Values above 0.75 are red.
+    Class 1: score <= mean - 1 standard deviation
+    Class 2: score > mean - 1 SD through mean
+    Class 3: score > mean through mean + 1 SD
+    Class 4: score > mean + 1 standard deviation
     */
 
-    if (score <= 0.25)
+    return [
+        statistics.mean
+            - statistics.standardDeviation,
+
+        statistics.mean,
+
+        statistics.mean
+            + statistics.standardDeviation
+    ];
+}
+
+// =====================================================
+// CALCULATE CURRENT CLASS BREAKS
+// =====================================================
+
+function calculateClassBreaks()
+{
+    const scores =
+        getFiniteScores();
+
+    const statistics =
+        calculateScoreStatistics(
+            scores
+        );
+
+    state.classificationStatistics =
+        statistics;
+
+    if (
+        state.classificationMethod
+        ===
+        CLASSIFICATION_METHODS.standardDeviation
+    )
+    {
+        state.classBreaks =
+            buildStandardDeviationBreaks(
+                statistics
+            );
+
+        return;
+    }
+
+    state.classBreaks =
+        buildEqualIntervalBreaks(
+            statistics
+        );
+}
+
+// =====================================================
+// GET COLOR CLASS
+// =====================================================
+
+function getColorClass(
+    score
+)
+{
+    const break1 =
+        state.classBreaks[0]
+        ?? 0;
+
+    const break2 =
+        state.classBreaks[1]
+        ?? break1;
+
+    const break3 =
+        state.classBreaks[2]
+        ?? break2;
+
+    if (
+        score <= break1
+    )
     {
         return 0;
     }
 
-    if (score <= 0.50)
+    if (
+        score <= break2
+    )
     {
         return 1;
     }
 
-    if (score <= 0.75)
+    if (
+        score <= break3
+    )
     {
         return 2;
     }
@@ -534,12 +740,16 @@ function getFixedColorClass(
     return 3;
 }
 
-function getFixedColor(
+// =====================================================
+// GET CLASS COLOR
+// =====================================================
+
+function getClassColor(
     score
 )
 {
     const classNumber =
-        getFixedColorClass(
+        getColorClass(
             score
         );
 
@@ -549,12 +759,14 @@ function getFixedColor(
 }
 
 // =====================================================
-// ASSIGN FIXED COLOR CLASSES
+// ASSIGN COLOR CLASSES
 // =====================================================
 
-function assignFixedColorClasses()
+function assignColorClasses()
 {
     state.colorClasses.clear();
+
+    calculateClassBreaks();
 
     state.scores.forEach(
         function (
@@ -572,7 +784,7 @@ function assignFixedColorClasses()
             }
 
             const classNumber =
-                getFixedColorClass(
+                getColorClass(
                     score
                 );
 
@@ -592,11 +804,11 @@ function recalculateScores()
 {
     state.scores.clear();
     state.colorClasses.clear();
+    state.classBreaks = [];
 
     /*
-    If every main index slider is zero, stop immediately.
-
-    No lines are created or assigned a default green color.
+    If every main index weight is zero, do not display
+    roadway segments.
     */
 
     if (
@@ -609,11 +821,6 @@ function recalculateScores()
         draw();
         return;
     }
-
-    /*
-    Calculate each individual index using the supplied
-    spreadsheet methodology.
-    */
 
     const normalizedIndexResults =
         {};
@@ -632,7 +839,7 @@ function recalculateScores()
 
     /*
     Combine the normalized indexes using the main
-    index-level slider weights.
+    index-level weights.
     */
 
     state.segments.forEach(
@@ -652,7 +859,9 @@ function recalculateScores()
                             ?? 0
                         );
 
-                    if (indexWeight <= 0)
+                    if (
+                        indexWeight <= 0
+                    )
                     {
                         return;
                     }
@@ -674,14 +883,16 @@ function recalculateScores()
                 }
             );
 
-            if (combinedWeightTotal <= 0)
+            if (
+                combinedWeightTotal <= 0
+            )
             {
                 return;
             }
 
             /*
-            Divide by total active index weight so only the
-            relative weighting of the indexes matters.
+            Divide by the total active index weight so
+            relative weighting controls the result.
             */
 
             const combinedScore =
@@ -695,9 +906,31 @@ function recalculateScores()
         }
     );
 
-    assignFixedColorClasses();
+    assignColorClasses();
     updateStatusMessage();
     draw();
+}
+
+// =====================================================
+// FORMAT CLASSIFICATION VALUE
+// =====================================================
+
+function formatClassificationValue(
+    value
+)
+{
+    if (
+        !Number.isFinite(
+            value
+        )
+    )
+    {
+        return "0.000";
+    }
+
+    return value.toFixed(
+        3
+    );
 }
 
 // =====================================================
@@ -723,12 +956,81 @@ function updateStatusMessage()
         }
     );
 
+    const break1 =
+        formatClassificationValue(
+            state.classBreaks[0]
+        );
+
+    const break2 =
+        formatClassificationValue(
+            state.classBreaks[1]
+        );
+
+    const break3 =
+        formatClassificationValue(
+            state.classBreaks[2]
+        );
+
+    const classificationName =
+        state.classificationMethod
+        ===
+        CLASSIFICATION_METHODS.standardDeviation
+            ? "Standard deviation"
+            : "4 equal intervals";
+
     statusEl.textContent =
         `${state.scores.size} scored segments: `
         + `${classCounts[0]} green, `
         + `${classCounts[1]} yellow, `
         + `${classCounts[2]} orange, `
-        + `${classCounts[3]} red.`;
+        + `${classCounts[3]} red. `
+        + `${classificationName} breaks: `
+        + `${break1}, ${break2}, and ${break3}.`;
+}
+
+// =====================================================
+// NORMALIZE ENTERED WEIGHT
+// =====================================================
+
+function normalizeWeight(
+    value
+)
+{
+    const numericValue =
+        Number(
+            value
+        );
+
+    if (
+        !Number.isFinite(
+            numericValue
+        )
+    )
+    {
+        return null;
+    }
+
+    const clampedValue =
+        Math.min(
+            WEIGHT_SETTINGS.maximum,
+            Math.max(
+                WEIGHT_SETTINGS.minimum,
+                numericValue
+            )
+        );
+
+    const roundedValue =
+        Math.round(
+            clampedValue
+            / WEIGHT_SETTINGS.step
+        )
+        * WEIGHT_SETTINGS.step;
+
+    return Number(
+        roundedValue.toFixed(
+            1
+        )
+    );
 }
 
 // =====================================================
@@ -740,11 +1042,6 @@ function createWeightSlider(
     changeFunction
 )
 {
-    const minimumValue = 0;
-    const maximumValue = 5;
-    const stepValue = 0.1;
-    const defaultValue = 1;
-
     const container =
         document.createElement(
             "div"
@@ -766,13 +1063,7 @@ function createWeightSlider(
     labelName.textContent =
         labelText;
 
-    /*
-    Create an editable number input instead of the
-    previous read-only output element.
-
-    Users can type a weight directly into this box.
-    */
-
+    // Editable numeric weight box.
     const numberInput =
         document.createElement(
             "input"
@@ -786,27 +1077,32 @@ function createWeightSlider(
 
     numberInput.min =
         String(
-            minimumValue
+            WEIGHT_SETTINGS.minimum
         );
 
     numberInput.max =
         String(
-            maximumValue
+            WEIGHT_SETTINGS.maximum
         );
 
     numberInput.step =
         String(
-            stepValue
+            WEIGHT_SETTINGS.step
         );
 
     numberInput.value =
-        defaultValue.toFixed(
+        WEIGHT_SETTINGS.defaultValue.toFixed(
             1
         );
 
     numberInput.setAttribute(
         "aria-label",
         labelText + " weight"
+    );
+
+    numberInput.setAttribute(
+        "inputmode",
+        "decimal"
     );
 
     label.appendChild(
@@ -817,6 +1113,7 @@ function createWeightSlider(
         numberInput
     );
 
+    // Range slider.
     const rangeInput =
         document.createElement(
             "input"
@@ -827,22 +1124,22 @@ function createWeightSlider(
 
     rangeInput.min =
         String(
-            minimumValue
+            WEIGHT_SETTINGS.minimum
         );
 
     rangeInput.max =
         String(
-            maximumValue
+            WEIGHT_SETTINGS.maximum
         );
 
     rangeInput.step =
         String(
-            stepValue
+            WEIGHT_SETTINGS.step
         );
 
     rangeInput.value =
         String(
-            defaultValue
+            WEIGHT_SETTINGS.defaultValue
         );
 
     rangeInput.setAttribute(
@@ -851,53 +1148,8 @@ function createWeightSlider(
     );
 
     /*
-    Keeps values within the accepted 0 through 5 range.
-    Values are rounded to the nearest tenth.
-    */
-
-    function normalizeWeight(
-        value
-    )
-    {
-        const numericValue =
-            Number(
-                value
-            );
-
-        if (
-            !Number.isFinite(
-                numericValue
-            )
-        )
-        {
-            return null;
-        }
-
-        const limitedValue =
-            Math.min(
-                maximumValue,
-                Math.max(
-                    minimumValue,
-                    numericValue
-                )
-            );
-
-        const roundedValue =
-            Math.round(
-                limitedValue
-                / stepValue
-            )
-            * stepValue;
-
-        return Number(
-            roundedValue.toFixed(
-                1
-            )
-        );
-    }
-
-    /*
-    Updates both controls and recalculates the map.
+    Apply a valid entered weight to the number box,
+    slider, application state, and map.
     */
 
     function applyWeight(
@@ -913,7 +1165,7 @@ function createWeightSlider(
             normalizedValue === null
         )
         {
-            return;
+            return false;
         }
 
         rangeInput.value =
@@ -929,6 +1181,8 @@ function createWeightSlider(
         changeFunction(
             normalizedValue
         );
+
+        return true;
     }
 
     /*
@@ -939,17 +1193,34 @@ function createWeightSlider(
         "input",
         function ()
         {
-            applyWeight(
-                rangeInput.value
+            const value =
+                normalizeWeight(
+                    rangeInput.value
+                );
+
+            if (
+                value === null
+            )
+            {
+                return;
+            }
+
+            numberInput.value =
+                value.toFixed(
+                    1
+                );
+
+            changeFunction(
+                value
             );
         }
     );
 
     /*
-    Typing in the number box updates the slider.
+    Typing a valid number updates the slider and map.
 
-    The input event makes the map respond immediately
-    once the entered value is valid.
+    The box is not reformatted until the user presses
+    Enter or leaves the box.
     */
 
     numberInput.addEventListener(
@@ -957,23 +1228,19 @@ function createWeightSlider(
         function ()
         {
             if (
-                numberInput.value === ""
-                ||
-                numberInput.value === "-"
-                ||
-                numberInput.value === "."
+                numberInput.value.trim() === ""
             )
             {
                 return;
             }
 
-            const normalizedValue =
+            const value =
                 normalizeWeight(
                     numberInput.value
                 );
 
             if (
-                normalizedValue === null
+                value === null
             )
             {
                 return;
@@ -981,31 +1248,38 @@ function createWeightSlider(
 
             rangeInput.value =
                 String(
-                    normalizedValue
+                    value
                 );
 
             changeFunction(
-                normalizedValue
+                value
             );
         }
     );
 
     /*
-    When the user leaves the number box, clamp the
-    value to 0 through 5 and format it to one decimal.
+    Validate and format the number when the user leaves
+    the number box.
     */
 
     numberInput.addEventListener(
-        "change",
+        "blur",
         function ()
         {
             if (
                 numberInput.value.trim() === ""
+                ||
+                normalizeWeight(
+                    numberInput.value
+                ) === null
             )
             {
-                applyWeight(
-                    defaultValue
-                );
+                numberInput.value =
+                    Number(
+                        rangeInput.value
+                    ).toFixed(
+                        1
+                    );
 
                 return;
             }
@@ -1017,8 +1291,7 @@ function createWeightSlider(
     );
 
     /*
-    Pressing Enter applies the entered number and
-    removes focus from the box.
+    Pressing Enter applies and formats the typed value.
     */
 
     numberInput.addEventListener(
@@ -1026,17 +1299,33 @@ function createWeightSlider(
         function (event)
         {
             if (
-                event.key === "Enter"
+                event.key !== "Enter"
             )
             {
-                event.preventDefault();
+                return;
+            }
 
+            event.preventDefault();
+
+            if (
+                numberInput.value.trim() === ""
+            )
+            {
+                numberInput.value =
+                    Number(
+                        rangeInput.value
+                    ).toFixed(
+                        1
+                    );
+            }
+            else
+            {
                 applyWeight(
                     numberInput.value
                 );
-
-                numberInput.blur();
             }
+
+            numberInput.blur();
         }
     );
 
@@ -1050,6 +1339,7 @@ function createWeightSlider(
 
     return container;
 }
+
 // =====================================================
 // BUILD INDEX AND FIELD WEIGHT CONTROLS
 // =====================================================
@@ -1069,7 +1359,7 @@ function buildWeightControls()
             state.indexW[
                 index.id
             ] =
-                1;
+                WEIGHT_SETTINGS.defaultValue;
 
             state.fieldW[
                 index.id
@@ -1119,7 +1409,7 @@ function buildWeightControls()
                     state.fieldW[
                         index.id
                     ][field] =
-                        1;
+                        WEIGHT_SETTINGS.defaultValue;
 
                     const fieldSlider =
                         createWeightSlider(
@@ -1160,7 +1450,7 @@ function buildFutureVolumeToggle()
         );
 
     container.className =
-        "slider";
+        "slider option-control";
 
     const label =
         document.createElement(
@@ -1210,6 +1500,190 @@ function buildFutureVolumeToggle()
 
     container.appendChild(
         label
+    );
+
+    if (
+        resetButton
+        &&
+        resetButton.parentNode
+    )
+    {
+        resetButton.parentNode.insertBefore(
+            container,
+            resetButton
+        );
+    }
+}
+
+// =====================================================
+// BUILD CLASSIFICATION METHOD SELECTOR
+// =====================================================
+
+function buildClassificationToggle()
+{
+    const container =
+        document.createElement(
+            "div"
+        );
+
+    container.className =
+        "classification-control";
+
+    const heading =
+        document.createElement(
+            "div"
+        );
+
+    heading.className =
+        "classification-title";
+
+    heading.textContent =
+        "Classification Method";
+
+    const options =
+        document.createElement(
+            "div"
+        );
+
+    options.className =
+        "classification-options";
+
+    // Equal interval option.
+    const equalIntervalLabel =
+        document.createElement(
+            "label"
+        );
+
+    const equalIntervalInput =
+        document.createElement(
+            "input"
+        );
+
+    equalIntervalInput.type =
+        "radio";
+
+    equalIntervalInput.name =
+        "classificationMethod";
+
+    equalIntervalInput.value =
+        CLASSIFICATION_METHODS.equalInterval;
+
+    equalIntervalInput.checked =
+        state.classificationMethod
+        ===
+        CLASSIFICATION_METHODS.equalInterval;
+
+    const equalIntervalText =
+        document.createElement(
+            "span"
+        );
+
+    equalIntervalText.textContent =
+        "4 Equal Intervals";
+
+    equalIntervalLabel.appendChild(
+        equalIntervalInput
+    );
+
+    equalIntervalLabel.appendChild(
+        equalIntervalText
+    );
+
+    // Standard deviation option.
+    const standardDeviationLabel =
+        document.createElement(
+            "label"
+        );
+
+    const standardDeviationInput =
+        document.createElement(
+            "input"
+        );
+
+    standardDeviationInput.type =
+        "radio";
+
+    standardDeviationInput.name =
+        "classificationMethod";
+
+    standardDeviationInput.value =
+        CLASSIFICATION_METHODS.standardDeviation;
+
+    standardDeviationInput.checked =
+        state.classificationMethod
+        ===
+        CLASSIFICATION_METHODS.standardDeviation;
+
+    const standardDeviationText =
+        document.createElement(
+            "span"
+        );
+
+    standardDeviationText.textContent =
+        "Standard Deviation";
+
+    standardDeviationLabel.appendChild(
+        standardDeviationInput
+    );
+
+    standardDeviationLabel.appendChild(
+        standardDeviationText
+    );
+
+    equalIntervalInput.addEventListener(
+        "change",
+        function ()
+        {
+            if (
+                !equalIntervalInput.checked
+            )
+            {
+                return;
+            }
+
+            state.classificationMethod =
+                CLASSIFICATION_METHODS.equalInterval;
+
+            assignColorClasses();
+            updateStatusMessage();
+            draw();
+        }
+    );
+
+    standardDeviationInput.addEventListener(
+        "change",
+        function ()
+        {
+            if (
+                !standardDeviationInput.checked
+            )
+            {
+                return;
+            }
+
+            state.classificationMethod =
+                CLASSIFICATION_METHODS.standardDeviation;
+
+            assignColorClasses();
+            updateStatusMessage();
+            draw();
+        }
+    );
+
+    options.appendChild(
+        equalIntervalLabel
+    );
+
+    options.appendChild(
+        standardDeviationLabel
+    );
+
+    container.appendChild(
+        heading
+    );
+
+    container.appendChild(
+        options
     );
 
     if (
@@ -1300,7 +1774,9 @@ function createSegmentPath(
                     coordinate[1]
                 );
 
-            if (coordinateIndex === 0)
+            if (
+                coordinateIndex === 0
+            )
             {
                 ctx.moveTo(
                     point[0],
@@ -1351,8 +1827,8 @@ function draw()
         mapFrame();
 
     /*
-    Draw the basemap with the fixed -7 pixel vertical
-    adjustment. Linework remains fixed.
+    Draw the basemap with the fixed vertical adjustment.
+    The roadway linework remains fixed.
     */
 
     if (
@@ -1376,8 +1852,8 @@ function draw()
     }
 
     /*
-    Do not draw any roadway lines when all main index
-    sliders are zero.
+    Do not draw roadway lines when every main index
+    weight is zero.
     */
 
     if (
@@ -1422,12 +1898,11 @@ function draw()
 
             /*
             Use one colored stroke only.
-
             No casing or outline is applied.
             */
 
             ctx.strokeStyle =
-                getFixedColor(
+                getClassColor(
                     score
                 );
 
@@ -1450,7 +1925,9 @@ Promise.all([
     .then(
         function (response)
         {
-            if (!response.ok)
+            if (
+                !response.ok
+            )
             {
                 throw new Error(
                     "Could not load segments.json"
@@ -1467,7 +1944,9 @@ Promise.all([
     .then(
         function (response)
         {
-            if (!response.ok)
+            if (
+                !response.ok
+            )
             {
                 throw new Error(
                     "Could not load indices.json"
@@ -1489,6 +1968,7 @@ Promise.all([
 
         buildWeightControls();
         buildFutureVolumeToggle();
+        buildClassificationToggle();
         recalculateScores();
         resizeCanvas();
     }
